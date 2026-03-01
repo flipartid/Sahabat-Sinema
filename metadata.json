@@ -1,0 +1,5 @@
+{
+  "name": "Sahabat Sinema",
+  "description": "Super Apps Simulasi Broadcasting & Perfilman Interaktif Terintegrasi AI",
+  "requestFramePermissions": ["camera", "microphone"]
+}

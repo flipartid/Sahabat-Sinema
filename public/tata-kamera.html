@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulasi Tata Kamera Interaktif V2</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* Grid Rule of Thirds */
+        .grid-thirds {
+            background-image: 
+                linear-gradient(to right, transparent 33.33%, rgba(255,255,255,0.4) 33.33%, rgba(255,255,255,0.4) 33.5%, transparent 33.5%, transparent 66.66%, rgba(255,255,255,0.4) 66.66%, rgba(255,255,255,0.4) 66.83%, transparent 66.83%),
+                linear-gradient(to bottom, transparent 33.33%, rgba(255,255,255,0.4) 33.33%, rgba(255,255,255,0.4) 33.5%, transparent 33.5%, transparent 66.66%, rgba(255,255,255,0.4) 66.66%, rgba(255,255,255,0.4) 66.83%, transparent 66.83%);
+        }
+        
+        /* Custom Scrollbar for Sidebar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #1f2937; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+
+        .btn-active {
+            background-color: #3b82f6 !important;
+            border-color: #60a5fa !important;
+            color: white !important;
+        }
+        .btn-toggle-on {
+            background-color: #f59e0b !important; /* Amber for active toggle */
+            border-color: #fbbf24 !important;
+            color: white !important;
+        }
+
+        .blink { animation: blinker 1.5s linear infinite; }
+        @keyframes blinker { 50% { opacity: 0; } }
+
+        /* Smooth transition for overlays */
+        #camera-ui { transition: opacity 0.3s ease-in-out; }
+        
+        /* Transisi Panel dan Chat */
+        .panel-transition { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+</head>
+<body class="bg-black text-gray-100 h-screen w-screen overflow-hidden relative font-sans">
+
+    <!-- Tombol Buka Menu (Muncul saat panel disembunyikan) -->
+    <button id="menu-toggle-btn" onclick="toggleMenu()" class="absolute top-4 left-4 z-50 bg-gray-900/80 hover:bg-gray-800 text-white p-2.5 rounded border border-gray-600 shadow-lg backdrop-blur transition-opacity duration-300 opacity-0 pointer-events-none">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+    </button>
+
+    <!-- Floating Sidebar Controls -->
+    <div id="control-panel" class="absolute top-0 left-0 h-full w-[85vw] max-w-[240px] bg-gray-900/50 backdrop-blur-md border-r border-gray-700/50 z-[60] transform transition-transform duration-300 translate-x-0 flex flex-col shadow-2xl">
+        <div class="p-3 bg-gray-800/40 border-b border-gray-700/50 flex justify-between items-center backdrop-blur-sm">
+            <div>
+                <h1 class="text-base font-bold text-white flex items-center gap-1.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    CineSim 3D
+                </h1>
+                <p class="text-[9px] text-gray-400 mt-0.5 uppercase tracking-wider">Kontrol Kamera</p>
+            </div>
+            <div class="flex gap-1.5">
+                <button onclick="resetCamera()" class="bg-red-600/80 hover:bg-red-600 text-white text-[10px] font-bold py-1 px-2 rounded transition shadow" title="Reset Simulasi">
+                    Reset
+                </button>
+                <button onclick="toggleMenu()" class="bg-gray-700/80 hover:bg-gray-600 text-white p-1 rounded transition shadow" title="Sembunyikan Menu">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-3 space-y-4">
+            
+            <!-- 1. Type of Shots -->
+            <div>
+                <h2 class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">1. Type of Shots</h2>
+                <div class="grid grid-cols-3 gap-1">
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1 px-1 rounded text-center transition" data-category="shot" data-type="ecu">ECU</button>
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1 px-1 rounded text-center transition" data-category="shot" data-type="bcu">BCU</button>
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1 px-1 rounded text-center transition" data-category="shot" data-type="cu">CU</button>
+                    
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1 px-1 rounded text-center transition" data-category="shot" data-type="mcu">MCU</button>
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1 px-1 rounded text-center transition btn-active" data-category="shot" data-type="ms">MS</button>
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1 px-1 rounded text-center transition" data-category="shot" data-type="mls">MLS</button>
+                    
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1 px-1 rounded text-center transition" data-category="shot" data-type="fs">FS</button>
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1 px-1 rounded text-center transition" data-category="shot" data-type="ls">LS</button>
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1 px-1 rounded text-center transition" data-category="shot" data-type="els">ELS</button>
+                </div>
+            </div>
+
+            <!-- 2. Camera Angle -->
+            <div>
+                <h2 class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">2. Camera Angle</h2>
+                <div class="grid grid-cols-2 gap-1">
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1.5 px-1 rounded text-center transition btn-active" data-category="angle" data-type="eye">Eye Level</button>
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1.5 px-1 rounded text-center transition" data-category="angle" data-type="high">High Angle</button>
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1.5 px-1 rounded text-center transition" data-category="angle" data-type="bird">Bird's Eye</button>
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1.5 px-1 rounded text-center transition" data-category="angle" data-type="low">Low Angle</button>
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1.5 px-1 rounded text-center transition" data-category="angle" data-type="frog">Frog Eye</button>
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1.5 px-1 rounded text-center transition" data-category="angle" data-type="dutch">Dutch Angle</button>
+                </div>
+            </div>
+
+            <!-- 3. Camera Movement -->
+            <div>
+                <h2 class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">3. Camera Movement</h2>
+                <div class="grid grid-cols-2 gap-1 mb-1">
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1.5 px-1 rounded text-center transition" data-category="move" data-type="pan_left">Pan L</button>
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1.5 px-1 rounded text-center transition" data-category="move" data-type="pan_right">Pan R</button>
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1.5 px-1 rounded text-center transition" data-category="move" data-type="tilt_up">Tilt Up</button>
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1.5 px-1 rounded text-center transition" data-category="move" data-type="tilt_down">Tilt Down</button>
+                    
+                    <button class="cam-btn text-[10px] bg-indigo-900/80 border border-indigo-700/80 hover:bg-indigo-800 py-1.5 px-1 rounded text-center transition" data-category="move" data-type="zoom_in">Zoom In</button>
+                    <button class="cam-btn text-[10px] bg-indigo-900/80 border border-indigo-700/80 hover:bg-indigo-800 py-1.5 px-1 rounded text-center transition" data-category="move" data-type="zoom_out">Zoom Out</button>
+                    <button class="cam-btn text-[10px] bg-emerald-900/80 border border-emerald-700/80 hover:bg-emerald-800 py-1.5 px-1 rounded text-center transition" data-category="move" data-type="dolly_in">Dolly In</button>
+                    <button class="cam-btn text-[10px] bg-emerald-900/80 border border-emerald-700/80 hover:bg-emerald-800 py-1.5 px-1 rounded text-center transition" data-category="move" data-type="dolly_out">Dolly Out</button>
+                    
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1.5 px-1 rounded text-center transition" data-category="move" data-type="crab_left">Crab L</button>
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1.5 px-1 rounded text-center transition" data-category="move" data-type="crab_right">Crab R</button>
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1.5 px-1 rounded text-center transition" data-category="move" data-type="ped_up">Ped Up</button>
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1.5 px-1 rounded text-center transition" data-category="move" data-type="ped_down">Ped Down</button>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-1">
+                    <button class="cam-btn text-[10px] bg-purple-900/80 border border-purple-700/80 hover:bg-purple-800 py-1.5 px-1 rounded text-center transition font-bold" data-category="move" data-type="arc">🎬 ARC</button>
+                    <button class="cam-btn text-[10px] bg-amber-900/80 border border-amber-700/80 hover:bg-amber-800 py-1.5 px-1 rounded text-center transition font-bold" data-category="toggle" data-type="float">🌊 FLOAT</button>
+                </div>
+            </div>
+
+            <div class="h-6"></div>
+        </div>
+    </div>
+
+    <!-- Main Viewport Area (Maximized to Full Screen Container) -->
+    <div class="absolute inset-0 bg-black flex items-center justify-center p-0 md:p-2 z-0">
+        
+        <!-- 16:9 Wrapper (Will max out width or height automatically) -->
+        <div id="viewport-wrapper" class="relative w-full max-h-full aspect-video bg-gray-950 shadow-2xl overflow-hidden ring-1 ring-gray-800 md:rounded-lg">
+            
+            <!-- WebGL Canvas -->
+            <div id="canvas-container" class="absolute inset-0"></div>
+
+            <!-- View Toggle Button -->
+            <button id="toggle-view-btn" class="absolute top-4 right-4 bg-gray-900/80 hover:bg-gray-800 text-white px-3 py-2 rounded border border-gray-600 shadow-lg z-50 flex items-center gap-2 text-sm backdrop-blur transition pointer-events-auto">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+                <span id="view-text">Lihat dari Luar</span>
+            </button>
+
+            <!-- Camera UI Overlay (Hidden when in External View) -->
+            <div id="camera-ui" class="absolute inset-0 pointer-events-none p-4 md:p-6 flex flex-col justify-between grid-thirds z-40">
+                
+                <!-- Viewfinder Top -->
+                <div class="flex justify-between items-start">
+                    <div class="flex items-center gap-2">
+                        <div class="w-3 h-3 bg-red-500 rounded-full blink"></div>
+                        <span class="text-red-500 font-bold text-sm md:text-base tracking-widest drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">REC</span>
+                    </div>
+                    <div class="font-mono text-xs md:text-sm text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] opacity-90" id="timecode">
+                        00:00:00:00
+                    </div>
+                </div>
+
+                <!-- Viewfinder Center Reticle -->
+                <div class="absolute inset-0 flex items-center justify-center opacity-40">
+                    <div class="w-10 h-10 border border-white rounded-full"></div>
+                    <div class="absolute w-14 h-[1px] bg-white"></div>
+                    <div class="absolute h-14 w-[1px] bg-white"></div>
+                </div>
+            </div>
+
+            <!-- Hideable Info Panel -->
+            <div class="absolute bottom-4 left-4 z-40 flex flex-col items-start gap-2 pointer-events-none">
+                <!-- Tombol Tampilkan Info (Tersembunyi by default) -->
+                <button onclick="toggleInfo(true)" id="show-info-btn" class="hidden pointer-events-auto bg-blue-600/90 hover:bg-blue-500 text-white px-3 py-1.5 rounded-full border border-blue-400 shadow-lg flex items-center gap-2 text-xs backdrop-blur transition">
+                    ℹ️ Tampilkan Info
+                </button>
+
+                <!-- Panel Konten Info -->
+                <div id="info-panel" class="pointer-events-auto bg-black/80 backdrop-blur-md border border-gray-600 rounded-lg p-3 md:p-4 max-w-[90vw] md:max-w-sm shadow-2xl panel-transition opacity-100 translate-y-0">
+                    <div class="flex justify-between items-start mb-1">
+                        <h3 id="info-title" class="text-base md:text-lg font-bold text-blue-400 pr-4">Medium Shot (MS) & Eye Level</h3>
+                        <button onclick="toggleInfo(false)" class="text-gray-400 hover:text-white p-1 -mt-1 -mr-1 rounded" title="Sembunyikan">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                    <p id="info-desc" class="text-xs md:text-sm text-gray-200 leading-relaxed">
+                        Kamera membingkai dari batas pinggang ke atas sejajar dengan mata. Standar paling natural untuk interaksi.
+                    </p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // --- DATA INFORMASI EDUKASI ---
+        const infoData = {
+            'ecu': { title: 'Extreme Close Up (ECU)', desc: 'Lensa dizoom maksimal secara ketat. Fokus menyorot tepat pada area MATA subjek saja untuk menampilkan intensitas emosi terdalam.' },
+            'bcu': { title: 'Big Close Up (BCU)', desc: 'Pembingkaian dari dahi hingga dagu. Emosi wajah mendominasi keseluruhan layar. Terasa sangat intim.' },
+            'cu':  { title: 'Close Up (CU)', desc: 'Pembingkaian dari batas bahu hingga atas kepala. Memperlihatkan ekspresi wajah dengan jelas.' },
+            'mcu': { title: 'Medium Close Up (MCU)', desc: 'Pembingkaian dari dada ke atas. Subjek terlihat lebih terhubung dengan penonton.' },
+            'ms':  { title: 'Medium Shot (MS)', desc: 'Pembingkaian dari pinggang ke atas. Menunjukkan bahasa tubuh dan ekspresi proporsional.' },
+            'mls': { title: 'Medium Long Shot (Knee Shot)', desc: 'Pembingkaian dari lutut ke atas. Menunjukkan interaksi dengan lingkungan terdekat.' },
+            'fs':  { title: 'Full Shot (FS)', desc: 'Tampak utuh dari ujung kepala hingga alas kaki. Memperlihatkan aksi fisik subjek keseluruhan.' },
+            'ls':  { title: 'Long Shot (LS)', desc: 'Jangkauan lensa melebar. Subjek terlihat bersama porsi lingkungan sebagai konteks.' },
+            'els': { title: 'Extreme Long Shot (ELS)', desc: 'Lensa sudut sangat lebar (Wide Angle). Subjek terlihat kecil. Menekankan skala lingkungan.' },
+
+            'bird': { title: 'Bird\'s Eye View', desc: 'Sangat tinggi menyorot ke bawah. Memberikan perspektif peta/pola ruang. Subjek tampak tidak signifikan.' },
+            'high': { title: 'High Angle', desc: 'Di atas sejajar mata menyorot ke bawah. Secara psikologis subjek terlihat lemah, kecil, atau terintimidasi.' },
+            'eye':  { title: 'Eye Level', desc: 'Sejajar dengan mata subjek. Sudut pandang paling netral dan objektif. Penonton merasa setara.' },
+            'low':  { title: 'Low Angle', desc: 'Di bawah menyorot ke atas. Subjek terlihat dominan, kuat, heroik, atau mengancam.' },
+            'frog': { title: 'Frog Eye', desc: 'Sangat rendah hampir menyentuh tanah. Efek dramatis yang mendistorsi ukuran subjek menjadi sangat raksasa.' },
+            'dutch':{ title: 'Dutch Angle / Canted Angle', desc: 'Kamera dimiringkan pada porosnya. Menimbulkan efek psikologis tidak stabil, tegang, disorientasi, atau horor.' },
+
+            'pan_left': { title: 'Pan Left', desc: 'Kamera menoleh ke kiri pada poros (tubuh kamera diam).' },
+            'pan_right':{ title: 'Pan Right', desc: 'Kamera menoleh ke kanan pada poros.' },
+            'tilt_up':  { title: 'Tilt Up', desc: 'Kamera mendongak ke atas pada porosnya.' },
+            'tilt_down':{ title: 'Tilt Down', desc: 'Kamera menunduk ke bawah pada porosnya.' },
+            
+            'zoom_in':  { title: 'Zoom In (Optical)', desc: 'Lensa membesar secara optikal tanpa kamera berpindah. Ruang tampak terkompresi (datar).' },
+            'zoom_out': { title: 'Zoom Out (Optical)', desc: 'Lensa mengecil secara optikal. Field of View meluas.' },
+            'dolly_in': { title: 'Dolly In / Track In', desc: 'Kamera bergerak maju FISIK. Perspektif paralaks 3D terasa kuat (objek depan terpisah dari dinding).' },
+            'dolly_out':{ title: 'Dolly Out / Track Out', desc: 'Kamera bergerak mundur secara fisik.' },
+            
+            'crab_left': { title: 'Crab Left (Truck)', desc: 'Kamera bergeser fisik sejajar ke kiri.' },
+            'crab_right':{ title: 'Crab Right (Truck)', desc: 'Kamera bergeser fisik sejajar ke kanan.' },
+            'ped_up':   { title: 'Pedestal Up', desc: 'Badan kamera naik vertikal secara fisik (seperti lift).' },
+            'ped_down': { title: 'Pedestal Down', desc: 'Badan kamera turun vertikal secara fisik.' },
+            
+            'arc':      { title: 'Arc Movement', desc: 'Kamera bergerak melingkar mengelilingi subjek. Menambah dinamika dramatis atau menunjukkan situasi 360 derajat.' },
+            'float':    { title: 'Float / Handheld (Toggle)', desc: 'Simulasi kamera dipegang tangan. Menambah kesan realisme, dokumenter, atau situasi tegang.' }
+        };
+
+        // --- THREE.JS SETUP ---
+        const container = document.getElementById('canvas-container');
+        const wrapper = document.getElementById('viewport-wrapper');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x111827);
+        scene.fog = new THREE.Fog(0x111827, 5, 30);
+
+        // Aspect ratio locked to 16:9
+        const ASPECT_RATIO = 16 / 9;
+
+        // Main Simulated Camera
+        const camera = new THREE.PerspectiveCamera(50, ASPECT_RATIO, 0.1, 100);
+        
+        // External Spectator Camera
+        const externalCamera = new THREE.PerspectiveCamera(50, ASPECT_RATIO, 0.1, 100);
+        externalCamera.position.set(7, 5, 8);
+        externalCamera.lookAt(0, 1, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        container.appendChild(renderer.domElement);
+
+        // Responsive Resize Observer for the container
+        const resizeObserver = new ResizeObserver(entries => {
+            for (let entry of entries) {
+                const { width, height } = entry.contentRect;
+                renderer.setSize(width, height);
+                camera.aspect = width / height;
+                camera.updateProjectionMatrix();
+                externalCamera.aspect = width / height;
+                externalCamera.updateProjectionMatrix();
+            }
+        });
+        resizeObserver.observe(wrapper);
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xfff5e6, 0.9);
+        dirLight.position.set(5, 10, 7);
+        dirLight.castShadow = true;
+        dirLight.shadow.camera.top = 10;
+        dirLight.shadow.camera.bottom = -10;
+        dirLight.shadow.camera.left = -10;
+        dirLight.shadow.camera.right = 10;
+        dirLight.shadow.mapSize.width = 1024;
+        dirLight.shadow.mapSize.height = 1024;
+        scene.add(dirLight);
+        const fillLight = new THREE.DirectionalLight(0xaaccff, 0.4);
+        fillLight.position.set(-5, 3, -5);
+        scene.add(fillLight);
+
+        // --- SCENE OBJECTS ---
+        
+        // Floor
+        const floorGeo = new THREE.PlaneGeometry(40, 40);
+        const canvas = document.createElement('canvas');
+        canvas.width = 256; canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#1f2937'; ctx.fillRect(0,0,256,256);
+        ctx.fillStyle = '#374151'; ctx.fillRect(0,0,128,128); ctx.fillRect(128,128,128,128);
+        const floorTex = new THREE.CanvasTexture(canvas);
+        floorTex.wrapS = THREE.RepeatWrapping; floorTex.wrapT = THREE.RepeatWrapping;
+        floorTex.repeat.set(20, 20);
+        const floorMat = new THREE.MeshLambertMaterial({ map: floorTex });
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+        // Environment Props (Backdrop & Depth cues)
+        const wallGeo = new THREE.BoxGeometry(20, 8, 0.5);
+        const wallMat = new THREE.MeshLambertMaterial({ color: 0x475569 });
+        const backWall = new THREE.Mesh(wallGeo, wallMat);
+        backWall.position.set(0, 4, -6);
+        backWall.receiveShadow = true;
+        scene.add(backWall);
+
+        const posterGeo = new THREE.PlaneGeometry(2, 3);
+        const p1 = new THREE.Mesh(posterGeo, new THREE.MeshBasicMaterial({ color: 0xfca5a5 }));
+        p1.position.set(-4, 3.5, -5.74);
+        scene.add(p1);
+        const p2 = new THREE.Mesh(posterGeo, new THREE.MeshBasicMaterial({ color: 0x93c5fd }));
+        p2.position.set(4, 3.5, -5.74);
+        scene.add(p2);
+
+        // Foreground Props
+        const desk = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1, 0.8), new THREE.MeshLambertMaterial({ color: 0x92400e }));
+        desk.position.set(-2, 0.5, 2.5);
+        desk.castShadow = true; desk.receiveShadow = true;
+        scene.add(desk);
+
+        const mug = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.25, 16), new THREE.MeshLambertMaterial({ color: 0xffffff }));
+        mug.position.set(-2, 1.125, 2.5);
+        mug.castShadow = true;
+        scene.add(mug);
+
+        // Main Subject (Humanoid)
+        const subjectGroup = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.22, 0.75, 32), new THREE.MeshLambertMaterial({ color: 0x2563eb }));
+        body.position.y = 1.05; body.castShadow = true;
+        subjectGroup.add(body);
+        
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 32, 32), new THREE.MeshLambertMaterial({ color: 0xfcd34d }));
+        head.position.y = 1.62; head.castShadow = true;
+        subjectGroup.add(head);
+
+        const hair = new THREE.Mesh(new THREE.SphereGeometry(0.21, 32, 16, 0, Math.PI * 2, 0, Math.PI/2), new THREE.MeshLambertMaterial({ color: 0x1f2937 }));
+        hair.position.y = 1.62;
+        subjectGroup.add(hair);
+
+        const eyeMat = new THREE.MeshBasicMaterial({color: 0x000000});
+        const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.025, 16, 16), eyeMat);
+        eyeL.position.set(-0.07, 1.65, 0.18);
+        const eyeR = new THREE.Mesh(new THREE.SphereGeometry(0.025, 16, 16), eyeMat);
+        eyeR.position.set(0.07, 1.65, 0.18);
+        subjectGroup.add(eyeL); subjectGroup.add(eyeR);
+
+        const nose = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.08, 16), new THREE.MeshLambertMaterial({ color: 0xfcd34d }));
+        nose.rotation.x = Math.PI / 2; nose.position.set(0, 1.58, 0.2);
+        subjectGroup.add(nose);
+
+        const pantsMat = new THREE.MeshLambertMaterial({ color: 0x1e3a8a });
+        const legL = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.09, 0.7, 32), pantsMat);
+        legL.position.set(-0.13, 0.35, 0); legL.castShadow = true;
+        const legR = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.09, 0.7, 32), pantsMat);
+        legR.position.set(0.13, 0.35, 0); legR.castShadow = true;
+        subjectGroup.add(legL); subjectGroup.add(legR);
+        scene.add(subjectGroup);
+
+        // --- 3D CAMERA MODEL (For External View) - Mirrorless Form ---
+        const camModelGrp = new THREE.Group();
+        
+        // 1. Body Mirrorless
+        const cBody = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.22, 0.15), new THREE.MeshLambertMaterial({color: 0x222222}));
+        cBody.castShadow = true;
+        
+        // 2. Grip Genggaman Kanan
+        const cGrip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.22, 0.18), new THREE.MeshLambertMaterial({color: 0x111111}));
+        cGrip.position.set(0.12, 0, -0.02);
+        
+        // 3. Viewfinder (EVF) di Atas Tengah
+        const cViewfinder = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.15), new THREE.MeshLambertMaterial({color: 0x1a1a1a}));
+        cViewfinder.position.set(0, 0.13, 0.02);
+        
+        // 4. Hotshoe / Dudukan Flash
+        const cHotshoe = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.02, 0.06), new THREE.MeshLambertMaterial({color: 0x333333}));
+        cHotshoe.position.set(0, 0.18, 0.0);
+
+        // 5. Lensa (Menghadap Subjek / Sumbu -Z)
+        const cLens = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.25, 32), new THREE.MeshLambertMaterial({color: 0x111111}));
+        cLens.rotation.x = Math.PI / 2; // Menghadap ke Z
+        cLens.position.set(0, 0, -0.2); // Geser ke area depan (-Z)
+        cLens.castShadow = true;
+
+        // 6. Kaca Lensa
+        const cGlass = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.02, 32), new THREE.MeshBasicMaterial({color: 0x0ea5e9}));
+        cGlass.rotation.x = Math.PI / 2;
+        cGlass.position.set(0, 0, -0.33);
+
+        // 7. Layar LCD (Menghadap Operator / Sumbu +Z)
+        const cLcdScreen = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.16), new THREE.MeshBasicMaterial({color: 0x3b82f6}));
+        cLcdScreen.position.set(-0.02, 0, 0.076);
+
+        // 8. Lampu Tally Merah (Area Kiri Bodi)
+        const cTallyLight = new THREE.Mesh(new THREE.SphereGeometry(0.015, 16, 16), new THREE.MeshBasicMaterial({color: 0xff0000}));
+        cTallyLight.position.set(-0.12, 0.08, -0.075); 
+
+        camModelGrp.add(cBody);
+        camModelGrp.add(cGrip);
+        camModelGrp.add(cViewfinder);
+        camModelGrp.add(cHotshoe);
+        camModelGrp.add(cLens);
+        camModelGrp.add(cGlass);
+        camModelGrp.add(cLcdScreen);
+        camModelGrp.add(cTallyLight);
+        camModelGrp.visible = false; // Hidden by default
+        scene.add(camModelGrp);
+
+        // --- STATE MANAGEMENT ---
+        let isExternalView = false;
+        let isHandheld = false;
+        let isArcing = false;
+        
+        let currentPos = new THREE.Vector3(0, 1.3, 3);
+        let targetPos = new THREE.Vector3(0, 1.3, 3);
+        
+        let currentLook = new THREE.Vector3(0, 1.2, 0);
+        let targetLook = new THREE.Vector3(0, 1.2, 0);
+        
+        let currentFov = 50;
+        let targetFov = 50;
+
+        let currentRoll = 0;
+        let targetRoll = 0;
+
+        let arcAngle = 0;
+        let arcRadius = 3;
+
+        let activeShot = 'ms';
+        let activeAngle = 'eye';
+
+        // Data FOV Optikal dan LookY untuk Framing (Disetel presisi matematis dengan headroom)
+        const shotData = {
+            'ecu': { fov: 2.0,  lookY: 1.65 }, // Fokus ketat menyorot tepat ke MATA subjek
+            'bcu': { fov: 6.5,  lookY: 1.66 }, // Presisi dari batas atas kepala hingga dagu
+            'cu':  { fov: 8.0,  lookY: 1.62 }, // Bahu ke atas (dengan headroom)
+            'mcu': { fov: 11.5, lookY: 1.55 }, // Dada ke atas (dengan headroom)
+            'ms':  { fov: 15.0, lookY: 1.42 }, // Pinggang ke atas (dengan headroom)
+            'mls': { fov: 20.5, lookY: 1.22 }, // Lutut ke atas (dengan headroom)
+            'fs':  { fov: 27.5, lookY: 0.97 }, // Ujung alas kaki hingga atas kepala
+            'ls':  { fov: 40.0, lookY: 0.90 }, // Konteks Lingkungan
+            'els': { fov: 60.0, lookY: 0.90 }  // Sangat luas
+        };
+
+        const angleModifiers = {
+            'bird': { yAdd: 6.0, zMult: 0.2, lookYOverride: 0, roll: 0 },
+            'high': { yAdd: 2.5, zMult: 1.0, lookYOverride: null, roll: 0 }, // Dibiarkan null agar otomatis membidik headroom dengan benar
+            'eye':  { yAdd: 0.0, zMult: 1.0, lookYOverride: null, roll: 0 },
+            'low':  { yAdd: -1.0, zMult: 1.0, lookYOverride: null, roll: 0 }, // Dibiarkan null agar otomatis membidik headroom dengan benar
+            'frog': { yAdd: -5.0, zMult: 1.0, lookYOverride: 1.6, minClampY: 0.1, roll: 0 },
+            'dutch':{ yAdd: 0.0, zMult: 1.0, lookYOverride: null, roll: 0.35 } // ~20 degrees miring
+        };
+
+        function calculateTarget() {
+            const angle = angleModifiers[activeAngle];
+            const shot = shotData[activeShot];
+
+            isArcing = false; // Disable arc when standard shot is selected
+
+            let finalZ = 4.0 * angle.zMult;
+            let finalLookY = angle.lookYOverride !== null ? angle.lookYOverride : shot.lookY;
+            let finalCamY = 1.2 + angle.yAdd;
+            
+            if(angle.minClampY !== undefined && finalCamY < angle.minClampY) {
+                finalCamY = angle.minClampY; 
+            }
+
+            if (activeAngle === 'bird') {
+                finalCamY = 4; finalLookY = 0;
+            }
+
+            targetPos.set(0, finalCamY, finalZ);
+            targetLook.set(0, finalLookY, 0);
+            targetFov = shot.fov; 
+            targetRoll = angle.roll;
+        }
+
+        function updateInfoUI(title, desc) {
+            document.getElementById('info-title').innerText = title;
+            document.getElementById('info-desc').innerHTML = desc;
+        }
+
+        // --- UI LOGIC (Menu, Info Panel & Chatbox) ---
+        let isMenuOpen = true;
+        
+        function toggleMenu() {
+            isMenuOpen = !isMenuOpen;
+            const panel = document.getElementById('control-panel');
+            const btn = document.getElementById('menu-toggle-btn');
+            
+            if (isMenuOpen) {
+                panel.classList.remove('-translate-x-full');
+                btn.classList.add('opacity-0', 'pointer-events-none');
+            } else {
+                panel.classList.add('-translate-x-full');
+                btn.classList.remove('opacity-0', 'pointer-events-none');
+            }
+        }
+
+        // Sembunyikan menu otomatis jika layar kecil (Mobile UX)
+        window.addEventListener('DOMContentLoaded', () => {
+            if (window.innerWidth < 768) {
+                toggleMenu();
+            }
+        });
+
+        function toggleInfo(show) {
+            const panel = document.getElementById('info-panel');
+            const btn = document.getElementById('show-info-btn');
+            
+            if (show) {
+                panel.classList.remove('opacity-0', 'translate-y-4', 'pointer-events-none');
+                panel.classList.add('opacity-100', 'translate-y-0');
+                btn.classList.add('hidden');
+            } else {
+                panel.classList.add('opacity-0', 'translate-y-4', 'pointer-events-none');
+                panel.classList.remove('opacity-100', 'translate-y-0');
+                btn.classList.remove('hidden');
+            }
+        }
+
+        // --- INTERACTION LOGIC ---
+        document.getElementById('toggle-view-btn').addEventListener('click', () => {
+            isExternalView = !isExternalView;
+            document.getElementById('view-text').innerText = isExternalView ? "Lihat dari Kamera" : "Lihat dari Luar";
+            document.getElementById('camera-ui').style.opacity = isExternalView ? '0' : '1';
+            camModelGrp.visible = isExternalView;
+        });
+
+        document.querySelectorAll('.cam-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const category = e.target.dataset.category;
+                const type = e.target.dataset.type;
+
+                // Handle Toggle (Float/Handheld)
+                if (category === 'toggle') {
+                    isHandheld = !isHandheld;
+                    if (isHandheld) e.target.classList.add('btn-toggle-on');
+                    else e.target.classList.remove('btn-toggle-on');
+                    
+                    let info = infoData[type];
+                    updateInfoUI(info.title, info.desc);
+                    return;
+                }
+
+                if (category === 'shot' || category === 'angle') {
+                    document.querySelectorAll(`.cam-btn[data-category="${category}"]`).forEach(b => b.classList.remove('btn-active'));
+                    e.target.classList.add('btn-active');
+                    
+                    if (category === 'shot') activeShot = type;
+                    if (category === 'angle') activeAngle = type;
+
+                    calculateTarget();
+                    let textInfo = infoData[type];
+                    updateInfoUI(textInfo.title, textInfo.desc);
+                    
+                    // Reset styling of move buttons
+                    document.querySelectorAll('.cam-btn[data-category="move"]').forEach(b => b.classList.remove('ring-2', 'ring-white'));
+                } 
+                else if (category === 'move') {
+                    document.querySelectorAll('.cam-btn[data-category="move"]').forEach(b => b.classList.remove('ring-2', 'ring-white'));
+                    e.target.classList.add('ring-2', 'ring-white');
+
+                    let info = infoData[type];
+                    updateInfoUI(info.title, info.desc);
+                    executeMovementAnimation(type);
+                }
+            });
+        });
+
+        function resetCamera() {
+            isArcing = false;
+            isHandheld = false;
+            activeShot = 'ms';
+            activeAngle = 'eye';
+            
+            document.querySelectorAll('.cam-btn').forEach(b => b.classList.remove('btn-active', 'ring-2', 'ring-white', 'btn-toggle-on'));
+            document.querySelector('.cam-btn[data-type="ms"]').classList.add('btn-active');
+            document.querySelector('.cam-btn[data-type="eye"]').classList.add('btn-active');
+            
+            calculateTarget();
+            updateInfoUI("Medium Shot (MS) & Eye Level", "Kamera membingkai dari batas pinggang ke atas sejajar dengan mata. Standar paling natural untuk interaksi.");
+        }
+
+        function executeMovementAnimation(type) {
+            isArcing = false; // Reset arc unless it's the active move
+            
+            // Set optimal starting positions for movements to be visible
+            if(type.includes('zoom') || type.includes('dolly')) {
+                targetPos.set(0, 1.2, 5); targetLook.set(0, 1.2, 0); targetFov = 50; targetRoll = 0;
+            } else if (type.includes('pan') || type.includes('tilt')) {
+                targetPos.set(0, 1.4, 3); targetLook.set(0, 1.4, 0); targetFov = 50; targetRoll = 0;
+            } else if (type.includes('crab') || type.includes('ped')) {
+                targetPos.set(0, 1.2, 4); targetLook.set(0, 1.2, 0); targetFov = 50; targetRoll = 0;
+            }
+
+            if (type !== 'arc') {
+                currentPos.copy(targetPos); currentLook.copy(targetLook);
+                currentFov = targetFov; camera.fov = targetFov; camera.updateProjectionMatrix();
+                currentRoll = 0;
+            }
+
+            setTimeout(() => {
+                switch(type) {
+                    case 'pan_left':   targetLook.x = -4; break;
+                    case 'pan_right':  targetLook.x = 4; break;
+                    case 'tilt_up':    targetLook.y = 4.0; break;
+                    case 'tilt_down':  targetLook.y = -0.5; break;
+                    case 'zoom_in':    targetFov = 15; break; 
+                    case 'zoom_out':   targetFov = 90; break; 
+                    case 'dolly_in':   targetPos.z = 1.2; break; 
+                    case 'dolly_out':  targetPos.z = 9.0; break; 
+                    case 'crab_left':  targetPos.x = -4; targetLook.x = -4; break; 
+                    case 'crab_right': targetPos.x = 4; targetLook.x = 4; break;
+                    case 'ped_up':     targetPos.y = 3.5; targetLook.y = 3.5; break;
+                    case 'ped_down':   targetPos.y = 0.2; targetLook.y = 0.2; break;
+                    case 'arc':        
+                        isArcing = true;
+                        arcAngle = Math.atan2(currentPos.x - currentLook.x, currentPos.z - currentLook.z);
+                        arcRadius = currentPos.distanceTo(currentLook);
+                        break;
+                }
+            }, 50);
+        }
+
+        // --- RENDER LOOP ---
+        let frameCount = 0;
+        let seconds = 0;
+        let time = 0;
+        const timecodeEl = document.getElementById('timecode');
+
+        window.onload = function () {
+            calculateTarget();
+            currentPos.copy(targetPos);
+            currentLook.copy(targetLook);
+
+            function animate() {
+                requestAnimationFrame(animate);
+                time += 0.016; // approx 60fps delta
+
+                // Arc Logic (Continuous update of target)
+                if (isArcing) {
+                    arcAngle -= 0.008; // speed of rotation
+                    targetPos.x = targetLook.x + Math.sin(arcAngle) * arcRadius;
+                    targetPos.z = targetLook.z + Math.cos(arcAngle) * arcRadius;
+                }
+
+                // Smooth interpolation for base target
+                currentPos.lerp(targetPos, 0.04); 
+                currentLook.lerp(targetLook, 0.05); 
+                currentFov += (targetFov - currentFov) * 0.04;
+                currentRoll += (targetRoll - currentRoll) * 0.05;
+
+                // Handheld Noise Logic (Applied on top of current position)
+                let renderPos = currentPos.clone();
+                let renderLook = currentLook.clone();
+                
+                if (isHandheld) {
+                    const shakeX = (Math.sin(time * 2.1) + Math.cos(time * 1.3)) * 0.015;
+                    const shakeY = (Math.cos(time * 1.7) + Math.sin(time * 2.5)) * 0.015;
+                    renderPos.x += shakeX;
+                    renderPos.y += shakeY;
+                    renderLook.x += shakeX;
+                    renderLook.y += shakeY;
+                }
+
+                // Apply to Main Camera
+                camera.position.copy(renderPos);
+                
+                // Roll / Dutch Angle logic
+                const upVec = new THREE.Vector3(-Math.sin(currentRoll), Math.cos(currentRoll), 0).normalize();
+                camera.up.copy(upVec);
+                camera.lookAt(renderLook);
+                
+                if(Math.abs(camera.fov - currentFov) > 0.1) {
+                    camera.fov = currentFov;
+                    camera.updateProjectionMatrix();
+                }
+
+                // Apply same logic to 3D Camera Model for External View
+                if (isExternalView) {
+                    camModelGrp.position.copy(renderPos);
+                    camModelGrp.up.copy(upVec);
+                    
+                    // Menghitung titik berlawanan agar lensa membelakangi subjek
+                    let dir = new THREE.Vector3().subVectors(renderPos, renderLook);
+                    let oppositeLook = new THREE.Vector3().addVectors(renderPos, dir);
+                    camModelGrp.lookAt(oppositeLook);
+                }
+
+                // Timecode UI Update
+                if(!isExternalView) {
+                    frameCount++;
+                    if(frameCount >= 24) { frameCount = 0; seconds++; }
+                    let h = String(Math.floor(seconds / 3600)).padStart(2, '0');
+                    let m = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
+                    let s = String(seconds % 60).padStart(2, '0');
+                    let f = String(frameCount).padStart(2, '0');
+                    timecodeEl.innerText = `${h}:${m}:${s}:${f}`;
+                }
+
+                // Render Scene
+                renderer.render(scene, isExternalView ? externalCamera : camera);
+            }
+            animate();
+        };
+
+    </script>
+</body>
+</html>

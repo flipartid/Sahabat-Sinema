@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Shot Framing</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; color: white; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        
+        /* Wadah Viewfinder 16:9 */
+        .viewfinder-wrapper { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background-color: #000; z-index: 1; }
+        .viewfinder-container { position: relative; width: 100%; height: 100%; max-width: calc(100vh * 16 / 9); max-height: calc(100vw * 9 / 16); overflow: hidden; background-color: #1e293b; box-shadow: 0 0 40px rgba(0,0,0,0.8); }
+        
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; display: flex; }
+        .pointer-events-auto { pointer-events: auto; }
+        
+        /* Crosshair & Rec Indicator */
+        .crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border: 1px solid rgba(255,255,255,0.3); z-index: 6; pointer-events: none; }
+        .crosshair::before { content: ''; position: absolute; top: 19px; left: -10px; width: 60px; height: 1px; background: rgba(255,255,255,0.3); }
+        .crosshair::after { content: ''; position: absolute; top: -10px; left: 19px; width: 1px; height: 60px; background: rgba(255,255,255,0.3); }
+        .rec-indicator { position: absolute; top: 5%; right: 4%; z-index: 6; display: flex; align-items: center; gap: 8px; font-weight: bold; color: #ff4444; text-shadow: 0 2px 4px rgba(0,0,0,0.8); }
+        .rec-dot { width: 12px; height: 12px; background: red; border-radius: 50%; animation: blink 1s infinite; box-shadow: 0 0 8px red; }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        
+        /* UI Panel Scrollbar */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // Data Shot, Posisi Kamera, dan Blocking (Posisi Aktor & Objek)
+        const SHOT_TYPES = [
+            {
+                id: 'single',
+                name: 'Single Shot',
+                icon: 'fa-user',
+                description: 'Pengambilan gambar yang menampilkan satu subjek saja di dalam frame secara terpusat dan estetik.',
+                purpose: 'Fokus penuh pada karakter, ekspresi, atau emosinya. Headroom dikontrol agar mata aktor berada di sepertiga atas layar (Rule of Thirds).',
+                camPos: { x: 0, y: 1.5, z: 2.2 },
+                lookAt: { x: 0, y: 1.15, z: -1 }, // Target diturunkan untuk mengurangi headroom
+                blocking: {
+                    A: { x: 0, z: -1, rotY: 0 },         
+                    B: { x: 0, z: 4, rotY: Math.PI },    
+                    C: { x: 8, z: 0, rotY: 0 },          
+                    D: { x: 9, z: 0, rotY: 0 },
+                    Phone: { x: 0, y: -1, z: 0, rotX: 0 } // HP disembunyikan di bawah lantai
+                }
+            },
+            {
+                id: 'two',
+                name: 'Two Shot',
+                icon: 'fa-user-friends',
+                description: 'Menampilkan dua orang karakter di dalam satu frame yang sama dengan kedekatan intim.',
+                purpose: 'Membangun hubungan antar dua karakter. Framing yang lebih rapat memberikan kesan intimasi atau ketegangan yang lebih intens.',
+                camPos: { x: 0, y: 1.5, z: 3.2 },
+                lookAt: { x: 0, y: 1.15, z: 0 },
+                blocking: {
+                    A: { x: -1.0, z: 0, rotY: Math.PI / 2.2 },  
+                    B: { x: 1.0, z: 0, rotY: -Math.PI / 2.2 },  
+                    C: { x: 8, z: 0, rotY: 0 },
+                    D: { x: 9, z: 0, rotY: 0 },
+                    Phone: { x: 0, y: -1, z: 0, rotX: 0 }
+                }
+            },
+            {
+                id: 'three',
+                name: 'Three Shot',
+                icon: 'fa-users',
+                description: 'Menampilkan tiga orang karakter sekaligus di dalam frame.',
+                purpose: 'Memperlihatkan dinamika pihak ketiga dalam sebuah percakapan. Komposisi segitiga menjaga keseimbangan visual.',
+                camPos: { x: 0, y: 1.5, z: 4.5 },
+                lookAt: { x: 0, y: 1.1, z: 0 },
+                blocking: {
+                    A: { x: -1.6, z: 0.5, rotY: Math.PI / 3 }, 
+                    B: { x: 0, z: -1, rotY: 0 },             
+                    C: { x: 1.6, z: 0.5, rotY: -Math.PI / 3 }, 
+                    D: { x: 8, z: 0, rotY: 0 },
+                    Phone: { x: 0, y: -1, z: 0, rotX: 0 }
+                }
+            },
+            {
+                id: 'group',
+                name: 'Group Shot',
+                icon: 'fa-users-viewfinder',
+                description: 'Pengambilan gambar lebar (wide) yang menampilkan banyak karakter.',
+                purpose: 'Memperlihatkan formasi karakter (blocking) dan interaksi mereka secara keseluruhan dalam satu kesatuan.',
+                camPos: { x: 0, y: 1.8, z: 6.5 },
+                lookAt: { x: 0, y: 0.8, z: -1 },
+                blocking: {
+                    A: { x: -2.2, z: -1, rotY: Math.PI / 6 }, 
+                    B: { x: -0.8, z: -0.5, rotY: 0 },
+                    C: { x: 0.8, z: -0.5, rotY: 0 },
+                    D: { x: 2.2, z: -1, rotY: -Math.PI / 6 },
+                    Phone: { x: 0, y: -1, z: 0, rotX: 0 }
+                }
+            },
+            {
+                id: 'ots',
+                name: 'Over-The-Shoulder (OTS)',
+                icon: 'fa-people-arrows',
+                description: 'Kamera diletakkan tepat di belakang bahu kanan lawan bicara (Foreground/B) yang berada di sebelah kiri, menyorot protagonis (A) di area sepertiga kanan layar.',
+                purpose: 'Menciptakan kedalaman visual (Depth of Field) dan koneksi subjektif. Menempatkan karakter di sepertiga layar mengikuti prinsip Rule of Thirds agar komposisi lebih seimbang.',
+                camPos: { x: -0.3, y: 1.45, z: 1.5 }, 
+                lookAt: { x: 0.1, y: 1.35, z: -1.5 }, // Target pandangan digeser agar protagonis pas di sepertiga kanan
+                blocking: {
+                    A: { x: 0.6, z: -1.5, rotY: -0.3 },              // Protagonis A (Berada di kanan grid Rule of Thirds)
+                    B: { x: -0.65, z: 0.2, rotY: Math.PI - 0.5 },    // Lawan Bicara B (Di kiri, menampilkan sedikit kepala & bahu kanan)
+                    C: { x: 8, z: 0, rotY: 0 },
+                    D: { x: 9, z: 0, rotY: 0 },
+                    Phone: { x: 0, y: -1, z: 0, rotX: 0 }
+                }
+            },
+            {
+                id: 'pov',
+                name: 'Point-of-View (POV) - Handphone',
+                icon: 'fa-mobile-screen',
+                description: 'Kamera mengambil alih posisi mata karakter. Dalam skenario dramatis ini, karakter sedang menatap layar benda di tangannya (Handphone).',
+                purpose: 'Memberikan informasi spesifik langsung kepada penonton (misal: isi pesan rahasia) sambil mempertahankan ketegangan subjektif karakter.',
+                camPos: { x: 0, y: 1.5, z: 1.8 }, // Posisi mata Aktor Merah
+                lookAt: { x: 0, y: 1.0, z: 1.3 }, // Menatap ke bawah ke arah HP
+                blocking: {
+                    A: { x: 0, z: 2.0, rotY: Math.PI },   // Posisi badan Aktor Merah (di belakang kamera)
+                    B: { x: 0, z: 6, rotY: 0 },           // Minggir
+                    C: { x: 8, z: 0, rotY: 0 },
+                    D: { x: 9, z: 0, rotY: 0 },
+                    Phone: { x: 0, y: 1.0, z: 1.3, rotX: -Math.PI / 3.5 } // HP diangkat ke depan dada, miring menghadap wajah
+                }
+            }
+        ];
+
+        const App = () => {
+            const [activeShot, setActiveShot] = useState(SHOT_TYPES[0]);
+            const [isInfoVisible, setIsInfoVisible] = useState(true);
+            const [isNavVisible, setIsNavVisible] = useState(window.innerWidth > 768);
+            const canvasRef = useRef(null);
+            
+            // Menyimpan referensi Three.js dan karakter-karakter
+            const threeState = useRef({ scene: null, camera: null, renderer: null, currentLookAt: null });
+            const charsRef = useRef({}); 
+
+            useEffect(() => {
+                // Inisialisasi Three.js
+                const scene = new THREE.Scene();
+                scene.background = new THREE.Color('#1e293b');
+                scene.fog = new THREE.FogExp2('#1e293b', 0.05);
+
+                // Kamera utama - FOV 35 derajat untuk tampilan Sinematik yang lebih padat/tight
+                const camera = new THREE.PerspectiveCamera(35, 16 / 9, 0.1, 100);
+                
+                // Renderer
+                const renderer = new THREE.WebGLRenderer({ antialias: true });
+                const container = canvasRef.current;
+                
+                renderer.setSize(container.clientWidth, container.clientHeight);
+                renderer.shadowMap.enabled = true;
+                renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                container.appendChild(renderer.domElement);
+
+                // Pencahayaan
+                const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); 
+                scene.add(ambientLight);
+
+                const keyLight = new THREE.DirectionalLight(0xffeedd, 1);
+                keyLight.position.set(5, 5, 5);
+                keyLight.castShadow = true;
+                keyLight.shadow.mapSize.width = 2048;
+                keyLight.shadow.mapSize.height = 2048;
+                scene.add(keyLight);
+
+                const backLight = new THREE.DirectionalLight(0xadd8e6, 0.8);
+                backLight.position.set(-5, 5, -5);
+                scene.add(backLight);
+
+                // Lantai
+                const floorGeometry = new THREE.PlaneGeometry(30, 30);
+                const floorMaterial = new THREE.MeshStandardMaterial({ 
+                    color: '#334155', roughness: 0.8, metalness: 0.2
+                });
+                const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+                floor.rotation.x = -Math.PI / 2;
+                floor.receiveShadow = true;
+                scene.add(floor);
+
+                // Grid Helper
+                const gridHelper = new THREE.GridHelper(30, 30, 0x000000, 0x475569);
+                gridHelper.position.y = 0.01;
+                gridHelper.material.opacity = 0.5;
+                gridHelper.material.transparent = true;
+                scene.add(gridHelper);
+
+                // Fungsi membuat karakter
+                const createCharacter = (color, posX, posZ, rotY) => {
+                    const group = new THREE.Group();
+                    
+                    const bodyGeo = new THREE.CylinderGeometry(0.3, 0.3, 1.2, 16);
+                    const bodyMat = new THREE.MeshStandardMaterial({ color: color });
+                    const body = new THREE.Mesh(bodyGeo, bodyMat);
+                    body.position.y = 0.6;
+                    body.castShadow = true;
+                    group.add(body);
+
+                    const headGeo = new THREE.SphereGeometry(0.25, 16, 16);
+                    const headMat = new THREE.MeshStandardMaterial({ color: '#ffddbb' });
+                    const head = new THREE.Mesh(headGeo, headMat);
+                    head.position.y = 1.45;
+                    head.castShadow = true;
+                    group.add(head);
+
+                    const visorGeo = new THREE.BoxGeometry(0.2, 0.1, 0.15);
+                    const visorMat = new THREE.MeshStandardMaterial({ color: '#111111' });
+                    const visor = new THREE.Mesh(visorGeo, visorMat);
+                    visor.position.set(0, 1.45, 0.22); 
+                    group.add(visor);
+
+                    group.position.set(posX, 0, posZ);
+                    group.rotation.y = rotY;
+                    scene.add(group);
+                    return group;
+                };
+
+                // Fungsi membuat Objek Handphone
+                const createPhone = () => {
+                    const group = new THREE.Group();
+                    
+                    // Body HP
+                    const phoneGeo = new THREE.BoxGeometry(0.15, 0.3, 0.02);
+                    const phoneMat = new THREE.MeshStandardMaterial({ color: '#1a1a1a' });
+                    const phone = new THREE.Mesh(phoneGeo, phoneMat);
+                    group.add(phone);
+
+                    // Layar Menyala (Emissive)
+                    const screenGeo = new THREE.PlaneGeometry(0.13, 0.28);
+                    const screenMat = new THREE.MeshBasicMaterial({ color: '#38bdf8' }); // Biru menyala
+                    const screen = new THREE.Mesh(screenGeo, screenMat);
+                    screen.position.z = 0.011; // Sedikit di depan body HP
+                    group.add(screen);
+
+                    scene.add(group);
+                    return group;
+                };
+
+                // Membangun Posisi Awal Berdasarkan Shot Pertama
+                const initialBlocking = SHOT_TYPES[0].blocking;
+                charsRef.current['A'] = createCharacter('#ef4444', initialBlocking.A.x, initialBlocking.A.z, initialBlocking.A.rotY);
+                charsRef.current['B'] = createCharacter('#3b82f6', initialBlocking.B.x, initialBlocking.B.z, initialBlocking.B.rotY);
+                charsRef.current['C'] = createCharacter('#10b981', initialBlocking.C.x, initialBlocking.C.z, initialBlocking.C.rotY);
+                charsRef.current['D'] = createCharacter('#f59e0b', initialBlocking.D.x, initialBlocking.D.z, initialBlocking.D.rotY);
+                
+                // Set initial HP
+                const phoneObj = createPhone();
+                phoneObj.position.set(initialBlocking.Phone.x, initialBlocking.Phone.y, initialBlocking.Phone.z);
+                phoneObj.rotation.x = initialBlocking.Phone.rotX;
+                charsRef.current['Phone'] = phoneObj;
+
+                // Set Kamera Awal
+                camera.position.set(SHOT_TYPES[0].camPos.x, SHOT_TYPES[0].camPos.y, SHOT_TYPES[0].camPos.z);
+                const initialLookAt = new THREE.Vector3(SHOT_TYPES[0].lookAt.x, SHOT_TYPES[0].lookAt.y, SHOT_TYPES[0].lookAt.z);
+                camera.lookAt(initialLookAt);
+
+                threeState.current = { scene, camera, renderer, currentLookAt: initialLookAt.clone() };
+
+                // Animasi Loop
+                const animate = () => {
+                    requestAnimationFrame(animate);
+                    renderer.render(scene, camera);
+                };
+                animate();
+
+                // Handle Resize
+                const handleResize = () => {
+                    if (!canvasRef.current || !threeState.current.camera || !threeState.current.renderer) return;
+                    const width = canvasRef.current.clientWidth;
+                    const height = canvasRef.current.clientHeight;
+                    threeState.current.camera.aspect = width / height;
+                    threeState.current.camera.updateProjectionMatrix();
+                    threeState.current.renderer.setSize(width, height);
+                };
+                window.addEventListener('resize', handleResize);
+                setTimeout(handleResize, 100);
+
+                return () => {
+                    window.removeEventListener('resize', handleResize);
+                    renderer.dispose();
+                };
+            }, []);
+
+            // Handle perubahan jenis Shot
+            useEffect(() => {
+                if (!threeState.current.camera) return;
+                
+                const { camera, currentLookAt } = threeState.current;
+                const { camPos, lookAt, blocking } = activeShot;
+
+                // 1. Animasi Kamera Posisi
+                gsap.to(camera.position, {
+                    x: camPos.x, y: camPos.y, z: camPos.z,
+                    duration: 1.5, ease: "power2.inOut"
+                });
+
+                // 2. Animasi Arah Pandang Kamera
+                gsap.to(currentLookAt, {
+                    x: lookAt.x, y: lookAt.y, z: lookAt.z,
+                    duration: 1.5, ease: "power2.inOut",
+                    onUpdate: () => camera.lookAt(currentLookAt)
+                });
+
+                // 3. Animasi Objek & Karakter (Termasuk Phone)
+                ['A', 'B', 'C', 'D', 'Phone'].forEach(objId => {
+                    const sceneObj = charsRef.current[objId];
+                    const targetPos = blocking[objId];
+                    
+                    if (sceneObj && targetPos) {
+                        // Posisi Koordinat
+                        gsap.to(sceneObj.position, {
+                            x: targetPos.x,
+                            y: targetPos.y !== undefined ? targetPos.y : 0, // Aktor di y:0, HP bisa naik/turun
+                            z: targetPos.z,
+                            duration: 1.5, ease: "power2.inOut"
+                        });
+                        
+                        // Rotasi (Untuk karakter biasanya rotY, untuk HP rotX)
+                        gsap.to(sceneObj.rotation, {
+                            x: targetPos.rotX || 0,
+                            y: targetPos.rotY || 0,
+                            duration: 1.5, ease: "power2.inOut"
+                        });
+                    }
+                });
+
+            }, [activeShot]);
+
+            const handleShotSelect = (shot) => {
+                setActiveShot(shot);
+                if (window.innerWidth < 768) setIsNavVisible(false);
+            };
+
+            return (
+                <div className="w-full h-screen relative font-sans bg-black">
+                    <div className="viewfinder-wrapper">
+                        <div className="viewfinder-container" ref={canvasRef}>
+                            <div className="crosshair"></div>
+                            <div className="rec-indicator">
+                                <div className="rec-dot"></div>
+                                <span>REC</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="ui-layer">
+                        <button
+                            onClick={() => setIsNavVisible(true)}
+                            className={`absolute top-4 left-4 z-20 bg-slate-900/90 backdrop-blur-md border border-slate-700 text-white w-10 h-10 md:w-12 md:h-12 rounded-full shadow-2xl flex items-center justify-center transition-all duration-300 pointer-events-auto hover:bg-slate-800 ${!isNavVisible ? 'scale-100 opacity-100' : 'scale-0 opacity-0 pointer-events-none'}`}
+                        >
+                            <i className="fas fa-bars"></i>
+                        </button>
+
+                        <div className={`absolute top-0 left-0 h-full w-72 md:w-80 bg-slate-900/95 backdrop-blur-md border-r border-slate-700 pointer-events-auto flex flex-col shadow-2xl z-30 transition-transform duration-300 ease-in-out ${isNavVisible ? 'translate-x-0' : '-translate-x-full'}`}>
+                            <div className="p-5 md:p-6 border-b border-slate-700 bg-slate-900 flex justify-between items-center">
+                                <div>
+                                    <h1 className="text-lg md:text-xl font-bold text-white mb-1 flex items-center gap-2 leading-tight">
+                                        <i className="fas fa-video text-red-500"></i>
+                                        Camera Shot Framing
+                                    </h1>
+                                    <p className="text-xs text-slate-400">Pilih simulasi posisi framing kamera.</p>
+                                </div>
+                                <button 
+                                    onClick={() => setIsNavVisible(false)}
+                                    className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-700 transition-colors flex-shrink-0"
+                                >
+                                    <i className="fas fa-times"></i>
+                                </button>
+                            </div>
+                            
+                            <div className="flex-1 overflow-y-auto custom-scrollbar p-3 md:p-4 space-y-2">
+                                {SHOT_TYPES.map((shot) => (
+                                    <button
+                                        key={shot.id}
+                                        onClick={() => handleShotSelect(shot)}
+                                        className={`w-full text-left p-3 md:p-4 rounded-xl transition-all duration-200 flex items-center gap-3 md:gap-4 ${
+                                            activeShot.id === shot.id 
+                                            ? 'bg-blue-600 shadow-lg shadow-blue-500/30 text-white' 
+                                            : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
+                                        }`}
+                                    >
+                                        <div className={`w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center flex-shrink-0 ${activeShot.id === shot.id ? 'bg-blue-500' : 'bg-slate-700'}`}>
+                                            <i className={`fas ${shot.icon} text-sm md:text-base`}></i>
+                                        </div>
+                                        <span className="font-semibold text-sm md:text-base">{shot.name}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className={`absolute bottom-[8%] md:bottom-[13%] left-4 right-4 md:left-1/2 md:-translate-x-1/2 flex justify-center pointer-events-auto z-20 transition-all duration-500 ease-in-out md:w-full md:max-w-3xl ${isInfoVisible ? 'translate-y-0 opacity-100' : 'translate-y-28 opacity-0 pointer-events-none'}`}>
+                            <div className="bg-slate-900/90 backdrop-blur-md p-4 md:p-6 rounded-2xl border border-slate-700 w-full shadow-2xl relative">
+                                
+                                <button 
+                                    onClick={() => setIsInfoVisible(false)}
+                                    className="absolute top-3 right-3 md:top-4 md:right-4 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 w-7 h-7 md:w-8 md:h-8 rounded-full flex items-center justify-center transition-all"
+                                    title="Sembunyikan Info"
+                                >
+                                    <i className="fas fa-chevron-down text-sm md:text-base"></i>
+                                </button>
+
+                                <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3 pr-8">
+                                    <span className="bg-red-500 text-white text-[9px] md:text-xs font-bold px-2 py-1 md:px-3 rounded-full uppercase tracking-wider">
+                                        Current Shot
+                                    </span>
+                                    <h2 className="text-lg md:text-2xl font-bold text-white">{activeShot.name}</h2>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-6 mt-2 md:mt-4 max-h-[30vh] md:max-h-none overflow-y-auto custom-scrollbar pr-2 md:pr-0">
+                                    <div>
+                                        <h3 className="text-[11px] md:text-sm font-semibold text-blue-400 mb-1 uppercase tracking-wider">Definisi</h3>
+                                        <p className="text-slate-300 leading-relaxed text-[11px] md:text-sm">{activeShot.description}</p>
+                                    </div>
+                                    <div>
+                                        <h3 className="text-[11px] md:text-sm font-semibold text-emerald-400 mb-1 uppercase tracking-wider">Tujuan Estetik / Psikologi</h3>
+                                        <p className="text-slate-300 leading-relaxed text-[11px] md:text-sm">{activeShot.purpose}</p>
+                                    </div>
+                                </div>
+                                
+                                <div className="mt-3 md:mt-5 pt-3 md:pt-4 border-t border-slate-700/50 flex flex-wrap gap-2 md:gap-4 text-[10px] md:text-xs text-slate-400">
+                                    <div className="flex items-center gap-1"><span className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full bg-red-500 inline-block"></span> Protagonis</div>
+                                    <div className="flex items-center gap-1"><span className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full bg-blue-500 inline-block"></span> Lawan Bicara</div>
+                                    <div className="flex items-center gap-1"><span className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full bg-emerald-500 inline-block"></span> Karakter 3</div>
+                                    <div className="flex items-center gap-1"><i className="fas fa-mobile-screen text-slate-300"></i> Objek Penting</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button
+                            onClick={() => setIsInfoVisible(true)}
+                            className={`absolute bottom-4 right-4 md:bottom-[13%] md:right-8 pointer-events-auto z-20 bg-slate-900/90 backdrop-blur-md border border-slate-700 text-white px-4 py-2 md:px-5 md:py-3 rounded-full shadow-2xl transition-all duration-500 ease-in-out flex items-center gap-2 hover:bg-slate-800 hover:scale-105 ${!isInfoVisible ? 'translate-y-0 opacity-100' : 'translate-y-24 opacity-0 pointer-events-none'}`}
+                        >
+                            <i className="fas fa-info-circle text-blue-400"></i>
+                            <span className="font-semibold text-xs md:text-sm">Info Shot</span>
+                        </button>
+
+                    </div>
+                </div>
+            );
+        };
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>

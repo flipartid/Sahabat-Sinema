@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Simulator Fotografi 3D</title>
+    <!-- Tailwind CSS untuk Styling UI -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome untuk Icon -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; color: white; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        
+        /* Hilangkan scrollbar default untuk panel UI */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+
+        /* Custom Slider Styling */
+        input[type=range] {
+            -webkit-appearance: none; width: 100%; background: transparent; margin: 10px 0;
+        }
+        input[type=range]:focus { outline: none; }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%; height: 6px; cursor: pointer; background: #4b5563; border-radius: 3px;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            height: 20px; width: 20px; border-radius: 50%; background: #eab308; cursor: pointer; -webkit-appearance: none; margin-top: -7px; box-shadow: 0 0 5px rgba(0,0,0,0.5);
+        }
+        
+        /* Viewfinder Frame 16:9 & Grid */
+        #viewfinder-frame { position: relative; background: #000; overflow: hidden; box-shadow: 0 0 30px rgba(0,0,0,0.9); transition: width 0.3s, height 0.3s; }
+        
+        .rule-of-thirds {
+            position: absolute; inset: 0; pointer-events: none; z-index: 5;
+            border: 1px solid rgba(255,255,255,0.2);
+            background-image:
+                linear-gradient(to right, transparent 33.33%, rgba(255,255,255,0.25) 33.33%, rgba(255,255,255,0.25) 33.5%, transparent 33.5%),
+                linear-gradient(to right, transparent 66.66%, rgba(255,255,255,0.25) 66.66%, rgba(255,255,255,0.25) 66.8%, transparent 66.8%),
+                linear-gradient(to bottom, transparent 33.33%, rgba(255,255,255,0.25) 33.33%, rgba(255,255,255,0.25) 33.5%, transparent 33.5%),
+                linear-gradient(to bottom, transparent 66.66%, rgba(255,255,255,0.25) 66.66%, rgba(255,255,255,0.25) 66.8%, transparent 66.8%);
+        }
+
+        .viewfinder-crosshair {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 40px; height: 40px; border: 1px solid rgba(255,255,255,0.3);
+            pointer-events: none; z-index: 6;
+        }
+        .viewfinder-crosshair::before, .viewfinder-crosshair::after {
+            content: ''; position: absolute; background: rgba(255,255,255,0.6);
+        }
+        .viewfinder-crosshair::before { top: 50%; left: 15px; right: 15px; height: 1px; transform: translateY(-50%); }
+        .viewfinder-crosshair::after { left: 50%; top: 15px; bottom: 15px; width: 1px; transform: translateX(-50%); }
+
+        /* DSLR Bottom Bar */
+        .vf-bottom-bar {
+            position: absolute; bottom: 0; left: 0; right: 0; height: 40px;
+            background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+            color: #4ade80; font-family: 'Courier New', Courier, monospace; font-weight: bold; font-size: 0.8rem; z-index: 15;
+            text-shadow: 0 0 4px rgba(74, 222, 128, 0.6); pointer-events: none;
+        }
+        @media (min-width: 640px) {
+            .vf-bottom-bar { height: 50px; gap: 20px; font-size: 1.1rem; }
+        }
+        .vf-meter { position: relative; width: 120px; height: 16px; }
+        @media (min-width: 640px) { .vf-meter { width: 180px; height: 20px; } }
+        .vf-tick { position: absolute; top: 50%; width: 3px; height: 3px; border-radius: 50%; background: rgba(74, 222, 128, 0.4); transform: translate(-50%, -50%); }
+        .vf-tick.major { width: 5px; height: 5px; background: rgba(74, 222, 128, 0.9); }
+        .vf-pointer { position: absolute; top: 50%; width: 10px; height: 10px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 8px #4ade80; transform: translate(-50%, -50%); transition: left 0.2s ease; z-index: 2; }
+
+        /* Flash, Modal & Toast */
+        #flash-overlay { position: absolute; inset: 0; background: white; opacity: 0; pointer-events: none; transition: opacity 0.1s; z-index: 20; }
+        #gallery-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 60; flex-direction: column; align-items: center; justify-content: center; padding: 1rem; }
+        #gallery-modal.active { display: flex; }
+        #result-image { max-width: 100%; max-height: 70vh; border: 4px solid #fff; box-shadow: 0 10px 25px rgba(0,0,0,0.5); object-fit: contain; }
+        
+        /* Modal Form Google */
+        #form-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 70; flex-direction: column; align-items: center; justify-content: center; padding: 1rem; }
+        #form-modal.active { display: flex; }
+
+        #mission-toast {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.9);
+            background: rgba(79, 70, 229, 0.9); padding: 10px 20px; border-radius: 30px;
+            font-weight: bold; font-size: 1.1rem; text-align: center; pointer-events: none;
+            opacity: 0; transition: all 0.4s ease; z-index: 25; border: 2px solid rgba(255,255,255,0.4);
+        }
+        #mission-toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    </style>
+</head>
+<body class="bg-black">
+
+    <!-- Kontainer Aplikasi Layar Penuh -->
+    <div class="fixed inset-0 w-full h-full flex flex-col items-center justify-center">
+        
+        <!-- Frame Viewfinder 3D Dinamis -->
+        <div id="viewfinder-frame">
+            <div class="absolute top-2 left-2 md:top-4 md:left-4 bg-black/60 px-2 py-1 md:px-3 rounded-md text-xs md:text-sm font-mono z-10 text-yellow-400">
+                <i class="fa-solid fa-camera mr-2"></i>Live 16:9
+            </div>
+            
+            <div class="rule-of-thirds"></div>
+            <div class="viewfinder-crosshair"></div>
+            <div id="flash-overlay"></div>
+            <div id="mission-toast"><i class="fa-solid fa-cloud-sun mr-2"></i>Kondisi Cahaya Berubah!</div>
+            
+            <div id="loading-indicator" class="hidden absolute inset-0 bg-black/80 z-30 flex flex-col items-center justify-content-center justify-center">
+                <i class="fa-solid fa-spinner fa-spin text-4xl text-yellow-500 mb-4"></i>
+                <p class="text-white text-sm font-semibold text-center px-4">Memproses AI Subject Isolation & Shutter...</p>
+            </div>
+
+            <div class="vf-bottom-bar">
+                <span id="vf-shutter">125</span>
+                <span id="vf-aperture">F5.6</span>
+                <div class="vf-meter">
+                    <div class="vf-tick major" style="left: 0%"></div>
+                    <div class="vf-tick" style="left: 16.6%"></div>
+                    <div class="vf-tick" style="left: 33.3%"></div>
+                    <div class="vf-tick major" style="left: 50%"></div>
+                    <div class="vf-tick" style="left: 66.6%"></div>
+                    <div class="vf-tick" style="left: 83.3%"></div>
+                    <div class="vf-tick major" style="left: 100%"></div>
+                    <div id="vf-meter-pointer" class="vf-pointer" style="left: 50%"></div>
+                </div>
+                <span id="vf-iso">ISO 100</span>
+            </div>
+        </div>
+
+        <!-- Tombol Jepret Utama (Floating Bottom Center) -->
+        <button id="btn-capture" class="absolute bottom-6 md:bottom-10 left-1/2 transform -translate-x-1/2 z-40 w-16 h-16 md:w-20 md:h-20 bg-yellow-500 rounded-full border-4 border-white shadow-2xl flex items-center justify-center text-gray-900 text-2xl md:text-3xl hover:bg-yellow-400 active:scale-90 transition">
+            <i class="fa-solid fa-camera-retro"></i>
+        </button>
+
+        <!-- Tombol Panggil Panel UI (Floating Top Right) -->
+        <button id="btn-toggle-ui" class="absolute top-4 right-4 z-40 w-12 h-12 bg-gray-800/80 backdrop-blur text-white rounded-full shadow-lg border border-gray-600 flex items-center justify-center hover:bg-gray-700 transition">
+            <i class="fa-solid fa-sliders text-xl"></i>
+        </button>
+    </div>
+
+    <!-- Panel Kontrol UI (Slide in dari kanan) -->
+    <div id="ui-container" class="fixed top-0 right-0 h-full w-full sm:w-[400px] bg-gray-900/95 backdrop-blur-xl border-l border-gray-700 flex flex-col transition-transform duration-300 translate-x-full z-50 shadow-2xl">
+        
+        <!-- Header Panel -->
+        <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-800">
+            <div>
+                <h1 class="text-xl font-bold text-white"><i class="fa-solid fa-sliders mr-2 text-yellow-500"></i>Pengaturan Kamera</h1>
+                <p class="text-xs text-gray-400">Segitiga Eksposur & Lensa</p>
+            </div>
+            <button id="btn-close-ui" class="text-gray-400 hover:text-white bg-gray-700 hover:bg-gray-600 w-8 h-8 rounded-full transition flex items-center justify-center">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- Konten Panel (Scrollable) -->
+        <div class="flex-1 overflow-y-auto p-5">
+            
+            <!-- MODE MISI BOX -->
+            <div class="mb-5 bg-indigo-900/50 border border-indigo-500 rounded-lg p-3 shadow-inner">
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="text-sm font-bold text-indigo-300"><i class="fa-solid fa-bolt mr-2"></i>Mode Misi Terpandu</h3>
+                    <span id="mission-status" class="text-xs font-bold px-2 py-0.5 bg-gray-700 rounded text-gray-300">BEBAS</span>
+                </div>
+                <p class="text-xs text-gray-300 mb-3">Tantang diri Anda! Klik tombol di bawah untuk mendapatkan pencahayaan acak. Sesuaikan kembali kamera hingga normal.</p>
+                <button id="btn-mission" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold py-2 rounded transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-dice"></i> Minta Tantangan
+                </button>
+            </div>
+
+            <!-- Slider ISO -->
+            <div class="mb-5">
+                <div class="flex justify-between items-end mb-1">
+                    <label class="font-semibold text-gray-200">ISO (Sensitivitas)</label>
+                    <span id="iso-val" class="font-mono text-yellow-400 font-bold bg-gray-800 px-2 py-1 rounded border border-gray-600">100</span>
+                </div>
+                <input type="range" id="iso-slider" min="0" max="6" value="0" step="1">
+                <p id="iso-tip" class="text-xs text-gray-400 mt-1">ISO rendah. Gambar bersih tanpa noise (bintik).</p>
+            </div>
+
+            <!-- Slider Aperture -->
+            <div class="mb-5">
+                <div class="flex justify-between items-end mb-1">
+                    <label class="font-semibold text-gray-200">Aperture (Bukaan)</label>
+                    <span id="aperture-val" class="font-mono text-yellow-400 font-bold bg-gray-800 px-2 py-1 rounded border border-gray-600">f/5.6</span>
+                </div>
+                <input type="range" id="aperture-slider" min="0" max="8" value="4" step="1">
+                <p id="aperture-tip" class="text-xs text-gray-400 mt-1">Bukaan sedang. Depth of Field (ruang tajam) normal.</p>
+            </div>
+
+            <!-- Slider Shutter Speed -->
+            <div class="mb-5">
+                <div class="flex justify-between items-end mb-1">
+                    <label class="font-semibold text-gray-200">Shutter Speed (Rana)</label>
+                    <span id="shutter-val" class="font-mono text-yellow-400 font-bold bg-gray-800 px-2 py-1 rounded border border-gray-600">1/125s</span>
+                </div>
+                <input type="range" id="shutter-slider" min="0" max="10" value="3" step="1">
+                <p id="shutter-tip" class="text-xs text-gray-400 mt-1">Cukup cepat untuk membekukan gerakan ringan.</p>
+            </div>
+
+            <!-- Pengaturan Lensa (Zoom & Fokus) -->
+            <div class="mb-6 pt-5 border-t border-gray-700">
+                <h3 class="text-md font-bold text-gray-300 mb-3"><i class="fa-solid fa-camera-retro mr-2"></i>Pengaturan Lensa</h3>
+                
+                <div class="mb-4">
+                    <div class="flex justify-between items-end mb-1">
+                        <label class="font-semibold text-gray-200">Focal Length (Zoom)</label>
+                        <span id="zoom-val" class="font-mono text-yellow-400 font-bold bg-gray-800 px-2 py-1 rounded border border-gray-600">50mm</span>
+                    </div>
+                    <input type="range" id="zoom-slider" min="18" max="200" value="50" step="1">
+                    <p id="zoom-tip" class="text-xs text-gray-400 mt-1">Lensa standar (50mm). Pandangan setara mata manusia.</p>
+                </div>
+
+                <div>
+                    <div class="flex justify-between items-end mb-1">
+                        <label class="font-semibold text-gray-200"><i class="fa-solid fa-crosshairs text-gray-400 mr-2"></i>Titik Fokus</label>
+                        <span id="focus-val" class="text-sm font-bold text-yellow-400 bg-gray-800 px-2 py-1 rounded border border-gray-600">Objek Tengah</span>
+                    </div>
+                    <input type="range" id="focus-slider" min="1" max="3" value="2" step="1">
+                    <div class="flex justify-between text-xs text-gray-400 px-1 font-semibold mt-1">
+                        <span>DEPAN</span>
+                        <span>TENGAH</span>
+                        <span>BELAKANG</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Posisi Kamera -->
+            <div class="mb-6 pt-5 border-t border-gray-700">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-md font-bold text-gray-300"><i class="fa-solid fa-arrows-up-down-left-right mr-2"></i>Posisi Kamera</h3>
+                    <button id="btn-reset-cam" class="bg-gray-700 hover:bg-gray-600 text-white text-xs px-3 py-1.5 rounded transition flex items-center gap-1">
+                        <i class="fa-solid fa-rotate-left"></i> Reset
+                    </button>
+                </div>
+                
+                <div class="mb-4">
+                    <div class="flex justify-between items-end mb-1">
+                        <label class="text-sm font-semibold text-gray-200">Geser Kiri / Kanan</label>
+                    </div>
+                    <input type="range" id="cam-x-slider" min="-15" max="15" value="0" step="1">
+                </div>
+
+                <div class="mb-10">
+                    <div class="flex justify-between items-end mb-1">
+                        <label class="text-sm font-semibold text-gray-200">Tinggi (Bawah / Atas)</label>
+                    </div>
+                    <input type="range" id="cam-y-slider" min="1" max="15" value="3" step="1">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Hasil Foto -->
+    <div id="gallery-modal">
+        <div class="bg-gray-800 p-4 md:p-6 rounded-xl w-full max-w-4xl relative flex flex-col items-center">
+            <button id="btn-close-gallery" class="absolute -top-3 -right-3 md:top-4 md:right-4 bg-red-600 hover:bg-red-500 text-white w-10 h-10 rounded-full font-bold shadow-lg transition z-10"><i class="fa-solid fa-xmark"></i></button>
+            <h2 class="text-xl font-bold mb-4 text-yellow-400 hidden md:block">Hasil Jepretan Anda</h2>
+            <img id="result-image" src="" alt="Hasil Foto" class="rounded">
+            <div class="mt-4 flex flex-wrap justify-center gap-2 md:gap-4 text-xs md:text-sm font-mono bg-black/50 px-4 py-2 rounded-lg text-gray-300 w-full text-center">
+                <span>ISO: <strong id="res-iso" class="text-white"></strong></span>|
+                <span><strong id="res-aperture" class="text-white"></strong></span>|
+                <span><strong id="res-shutter" class="text-white"></strong></span>|
+                <span><strong id="res-zoom" class="text-white"></strong></span>
+            </div>
+            
+            <!-- Box Analisis -->
+            <div class="mt-4 p-3 bg-gray-900 border border-gray-700 rounded-lg w-full max-w-xl">
+                <p class="text-center text-gray-300 text-xs md:text-sm" id="res-analysis"></p>
+                <div id="mission-result" class="hidden mt-2 text-center font-bold text-sm"></div>
+                
+                <!-- Tombol Form Google (Hanya muncul jika misi sukses) -->
+                <div id="mission-action-container" class="hidden mt-4 flex justify-center">
+                    <button id="btn-fill-form" class="bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold py-2 px-4 rounded shadow transition flex items-center gap-2">
+                        <i class="fa-solid fa-file-signature"></i> Isi Identitas Keberhasilan
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Form Identitas Google -->
+    <div id="form-modal">
+        <div class="bg-white rounded-xl w-full max-w-2xl h-[85vh] relative flex flex-col overflow-hidden shadow-2xl">
+            <div class="bg-gray-800 p-3 flex justify-between items-center text-white border-b border-gray-700">
+                <h2 class="font-bold text-sm md:text-base"><i class="fa-solid fa-clipboard-check mr-2 text-green-400"></i>Formulir Bukti Misi</h2>
+                <button id="btn-close-form" class="text-gray-400 hover:text-white transition w-8 h-8 rounded-full bg-gray-700 hover:bg-gray-600 flex items-center justify-center">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="flex-1 w-full bg-gray-100 overflow-hidden">
+                <!-- Google Form Iframe -->
+                <iframe src="https://docs.google.com/forms/d/e/1FAIpQLSdesxz79dC1oMVJAWPAvSSNRI_CmANnnMNn5rd6LdhaPh7Irw/viewform?embedded=true" width="100%" height="100%" frameborder="0" marginheight="0" marginwidth="0">Loading…</iframe>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+
+    <script>
+        // --- LOGIKA UI (TOGGLE & RESPONSIVE) ---
+        const uiContainer = document.getElementById('ui-container');
+        const btnToggleUI = document.getElementById('btn-toggle-ui');
+        const btnCloseUI = document.getElementById('btn-close-ui');
+
+        btnToggleUI.addEventListener('click', () => { uiContainer.classList.remove('translate-x-full'); });
+        btnCloseUI.addEventListener('click', () => { uiContainer.classList.add('translate-x-full'); });
+
+        // --- DATA KONFIGURASI KAMERA ---
+        const ISO_STEPS = [100, 200, 400, 800, 1600, 3200, 6400];
+        const APERTURE_STEPS = [1.4, 2, 2.8, 4, 5.6, 8, 11, 16, 22];
+        const SHUTTER_STEPS = [
+            { label: '1/1000s', value: 0.001 },
+            { label: '1/500s', value: 0.002 },
+            { label: '1/250s', value: 0.004 },
+            { label: '1/125s', value: 0.008 },
+            { label: '1/60s', value: 0.016 },
+            { label: '1/30s', value: 0.033 },
+            { label: '1/15s', value: 0.066 },
+            { label: '1/8s', value: 0.125 },
+            { label: '1/4s', value: 0.25 },
+            { label: '1/2s', value: 0.5 },
+            { label: '1s', value: 1.0 }
+        ];
+
+        // Status Kamera Aktif
+        let currentISO = ISO_STEPS[0];
+        let currentAperture = APERTURE_STEPS[4]; 
+        let currentShutter = SHUTTER_STEPS[3];   
+        let currentFocus = 25;
+        let currentFocalLength = 50; 
+
+        // Target EV Default (Kondisi Cahaya Terang Standar ~EV 12)
+        let targetEV = Math.log2(Math.pow(5.6, 2) / 0.008) - Math.log2(100 / 100); 
+        let isMissionActive = false;
+
+        // --- TUGAS MISI ---
+        const btnMission = document.getElementById('btn-mission');
+        const missionStatus = document.getElementById('mission-status');
+        const missionToast = document.getElementById('mission-toast');
+
+        btnMission.addEventListener('click', () => {
+            isMissionActive = true;
+            
+            // Generate EV acak antara 9.0 (Mendung/Indoor) hingga 15.0 (Matahari Terik)
+            // Ini cukup wajar agar subjek bisa direkam menggunakan shutter >= 1/30 tanpa harus selalu gelap
+            targetEV = 9.0 + (Math.random() * 6.0); 
+            
+            // Update UI
+            missionStatus.innerText = 'AKTIF';
+            missionStatus.className = 'text-xs font-bold px-2 py-0.5 bg-green-600 rounded text-white';
+            
+            // Tampilkan Pop up toast singkat
+            missionToast.classList.add('show');
+            setTimeout(() => {
+                missionToast.classList.remove('show');
+            }, 3000);
+
+            // Terapkan perubahan cahaya seketika ke Viewfinder
+            updateCameraPhysics();
+            
+            // Sembunyikan panel UI sebentar agar siswa melihat efek cahayanya di Viewfinder
+            uiContainer.classList.add('translate-x-full');
+        });
+
+        // --- THREE.JS SETUP ---
+        let scene, camera, renderer, composer, customPass;
+        let windmillGroup; 
+        const clock = new THREE.Clock();
+        
+        const ExposureNoiseShader = {
+            uniforms: {
+                "tDiffuse": { value: null },
+                "exposure": { value: 1.0 },
+                "noiseStrength": { value: 0.0 },
+                "time": { value: 0.0 }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+            `,
+            fragmentShader: `
+                uniform sampler2D tDiffuse; uniform float exposure; uniform float noiseStrength; uniform float time; varying vec2 vUv;
+                float random(vec2 p) { return fract(sin(dot(p.xy, vec2(12.9898,78.233))) * 43758.5453); }
+                void main() {
+                    vec4 texColor = texture2D(tDiffuse, vUv);
+                    vec3 color = texColor.rgb * exposure;
+                    vec2 noiseUv = vUv + vec2(time * 0.1, -time * 0.1);
+                    float noise = (random(noiseUv) - 0.5) * noiseStrength;
+                    color += vec3(noise);
+                    color = clamp(color, 0.0, 1.0);
+                    gl_FragColor = vec4(color, texColor.a);
+                }
+            `
+        };
+
+        function init3D() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87CEEB);
+            scene.fog = new THREE.Fog(0x87CEEB, 20, 100);
+
+            camera = new THREE.PerspectiveCamera(45, 16 / 9, 0.1, 100);
+            camera.position.set(0, 3, 25);
+
+            renderer = new THREE.WebGLRenderer({ antialias: false, preserveDrawingBuffer: true });
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            
+            document.getElementById('viewfinder-frame').appendChild(renderer.domElement);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.3); scene.add(ambientLight);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+            dirLight.position.set(15, 20, 10); dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 1024; dirLight.shadow.mapSize.height = 1024; scene.add(dirLight);
+
+            buildSceneObjects(); setupPostProcessing();
+            window.addEventListener('resize', onWindowResize, false);
+            onWindowResize(); updateCameraPhysics(); animate();
+        }
+
+        function createCheckerTexture() {
+            const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 512;
+            const context = canvas.getContext('2d');
+            context.fillStyle = '#ffffff'; context.fillRect(0, 0, 512, 512); context.fillStyle = '#cccccc';
+            for(let i=0; i<8; i++) { for(let j=0; j<8; j++) { if((i+j)%2 === 0) context.fillRect(i*64, j*64, 64, 64); } }
+            const tex = new THREE.CanvasTexture(canvas); tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(20, 20);
+            return tex;
+        }
+
+        function buildSceneObjects() {
+            const floorMat = new THREE.MeshStandardMaterial({ map: createCheckerTexture(), roughness: 0.8, metalness: 0.2 });
+            const floor = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), floorMat);
+            floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; floor.userData.targetGroup = 0; scene.add(floor);
+
+            const torusGeo = new THREE.TorusKnotGeometry(1.5, 0.5, 100, 16);
+            const torusMat = new THREE.MeshStandardMaterial({ color: 0xe02424, roughness: 0.3, metalness: 0.5 });
+            const torus = new THREE.Mesh(torusGeo, torusMat);
+            torus.position.set(-4, 3, 10); torus.castShadow = true; torus.receiveShadow = true; torus.userData.targetGroup = 1; scene.add(torus);
+
+            windmillGroup = new THREE.Group(); windmillGroup.position.set(0, 4, 0); 
+            const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 8, 16), new THREE.MeshStandardMaterial({color: 0x4b5563}));
+            pole.castShadow = true; windmillGroup.add(pole);
+
+            const blades = new THREE.Group(); blades.position.set(0, 3, 0.6);
+            const bladeGeo = new THREE.BoxGeometry(0.2, 6, 0.5); const bladeMat = new THREE.MeshStandardMaterial({color: 0xeab308});
+            const blade1 = new THREE.Mesh(bladeGeo, bladeMat); blade1.castShadow = true; blades.add(blade1);
+            const blade2 = new THREE.Mesh(bladeGeo, bladeMat); blade2.rotation.z = Math.PI / 2; blade2.castShadow = true; blades.add(blade2);
+            const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 1, 16), new THREE.MeshStandardMaterial({color: 0xef4444}));
+            hub.rotation.x = Math.PI / 2; blades.add(hub);
+
+            windmillGroup.add(blades); windmillGroup.userData.blades = blades; 
+            windmillGroup.traverse(c => { if(c.isMesh) c.userData.targetGroup = 2; }); scene.add(windmillGroup);
+
+            const bgGroup = new THREE.Group(); bgGroup.position.set(5, 0, -15);
+            for(let i=0; i<5; i++) {
+                const box = new THREE.Mesh(new THREE.BoxGeometry(2, 6 + Math.random()*4, 2), new THREE.MeshStandardMaterial({color: 0x3b82f6}));
+                box.position.set(i * 3 - 6, 3, 0); box.castShadow = true; box.receiveShadow = true; bgGroup.add(box);
+            }
+            bgGroup.traverse(c => { if(c.isMesh) c.userData.targetGroup = 3; }); scene.add(bgGroup);
+        }
+
+        function setupPostProcessing() {
+            composer = new THREE.EffectComposer(renderer);
+            composer.addPass(new THREE.RenderPass(scene, camera));
+            customPass = new THREE.ShaderPass(ExposureNoiseShader);
+            composer.addPass(customPass);
+        }
+
+        function onWindowResize() {
+            const frame = document.getElementById('viewfinder-frame');
+            const targetRatio = 16 / 9; const containerW = window.innerWidth; const containerH = window.innerHeight;
+            const containerRatio = containerW / containerH;
+            let w, h;
+            if (containerRatio > targetRatio) { h = containerH; w = h * targetRatio; } 
+            else { w = containerW; h = w / targetRatio; }
+            
+            frame.style.width = w + 'px'; frame.style.height = h + 'px';
+            camera.aspect = targetRatio; camera.updateProjectionMatrix();
+            renderer.setSize(w, h); composer.setSize(w, h);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if(windmillGroup && windmillGroup.userData.blades) windmillGroup.userData.blades.rotation.z -= 4.0 * clock.getDelta(); 
+            if(customPass) customPass.uniforms.time.value = clock.getElapsedTime();
+            composer.render();
+        }
+
+        // --- LOGIKA SIMULASI FOTOGRAFI & UI ---
+        const uiIso = document.getElementById('iso-slider'); const uiAperture = document.getElementById('aperture-slider');
+        const uiShutter = document.getElementById('shutter-slider'); const uiFocus = document.getElementById('focus-slider');
+        const uiZoom = document.getElementById('zoom-slider'); const uiCamX = document.getElementById('cam-x-slider'); const uiCamY = document.getElementById('cam-y-slider');
+
+        function updateCameraPhysics() {
+            currentISO = ISO_STEPS[uiIso.value]; currentAperture = APERTURE_STEPS[uiAperture.value];
+            currentShutter = SHUTTER_STEPS[uiShutter.value]; currentFocalLength = parseFloat(uiZoom.value);
+
+            const focusStep = parseInt(uiFocus.value);
+            if (focusStep === 1) { currentFocus = 15; document.getElementById('focus-val').innerText = "Objek Depan"; } 
+            else if (focusStep === 2) { currentFocus = 25; document.getElementById('focus-val').innerText = "Objek Tengah"; } 
+            else { currentFocus = 40; document.getElementById('focus-val').innerText = "Objek Belakang"; }
+
+            let camX = parseFloat(uiCamX.value); let camY = parseFloat(uiCamY.value);
+            camera.position.x = camX; camera.position.y = camY; camera.lookAt(camX, camY, 0); 
+            camera.fov = 2 * Math.atan(24 / (2 * currentFocalLength)) * (180 / Math.PI); camera.updateProjectionMatrix();
+
+            const currentEV = Math.log2(Math.pow(currentAperture, 2) / currentShutter.value) - Math.log2(currentISO / 100);
+            const evDiff = targetEV - currentEV; 
+            let exposureMultiplier = Math.pow(2, evDiff);
+            exposureMultiplier = Math.max(0.05, Math.min(exposureMultiplier, 10.0));
+
+            const vfPointer = document.getElementById('vf-meter-pointer');
+            let percentage = 50 + (evDiff * 16.66);
+            vfPointer.style.left = Math.max(0, Math.min(percentage, 100)) + '%';
+
+            if(customPass) {
+                customPass.uniforms.exposure.value = exposureMultiplier;
+                customPass.uniforms.noiseStrength.value = Math.max(0.0, (currentISO - 100) / (6400 - 100) * 0.5);
+            }
+
+            document.getElementById('iso-val').innerText = currentISO; document.getElementById('aperture-val').innerText = 'f/' + currentAperture;
+            document.getElementById('shutter-val').innerText = currentShutter.label; document.getElementById('zoom-val').innerText = currentFocalLength + 'mm';
+            document.getElementById('vf-iso').innerText = 'ISO ' + currentISO; document.getElementById('vf-aperture').innerText = 'F' + currentAperture;
+            
+            let shutterText = currentShutter.label.replace('1/', '').replace('s', '');
+            if(currentShutter.value >= 1.0) shutterText = currentShutter.label.replace('s', '"'); 
+            document.getElementById('vf-shutter').innerText = shutterText;
+
+            updateEducationalTips(evDiff);
+        }
+
+        function updateEducationalTips(evDiff) {
+            const isoTip = document.getElementById('iso-tip');
+            const apTip = document.getElementById('aperture-tip');
+            const shTip = document.getElementById('shutter-tip');
+            const zoomTip = document.getElementById('zoom-tip');
+
+            const isoValEl = document.getElementById('iso-val');
+            const apValEl = document.getElementById('aperture-val');
+            const shValEl = document.getElementById('shutter-val');
+
+            if (isMissionActive) {
+                // Sembunyikan warna highlight angka dan hilangkan teks bantuan
+                isoValEl.className = "font-mono text-gray-400 font-bold bg-gray-800 px-2 py-1 rounded border border-gray-600";
+                apValEl.className = "font-mono text-gray-400 font-bold bg-gray-800 px-2 py-1 rounded border border-gray-600";
+                shValEl.className = "font-mono text-gray-400 font-bold bg-gray-800 px-2 py-1 rounded border border-gray-600";
+
+                isoTip.innerHTML = "<span class='text-gray-500 italic'>Keterangan disembunyikan (Mode Tantangan)</span>";
+                apTip.innerHTML = "<span class='text-gray-500 italic'>Keterangan disembunyikan (Mode Tantangan)</span>";
+                shTip.innerHTML = "<span class='text-gray-500 italic'>Keterangan disembunyikan (Mode Tantangan)</span>";
+            } else {
+                // Kembalikan warna highlight angka kuning terang
+                isoValEl.className = "font-mono text-yellow-400 font-bold bg-gray-800 px-2 py-1 rounded border border-gray-600";
+                apValEl.className = "font-mono text-yellow-400 font-bold bg-gray-800 px-2 py-1 rounded border border-gray-600";
+                shValEl.className = "font-mono text-yellow-400 font-bold bg-gray-800 px-2 py-1 rounded border border-gray-600";
+
+                if(currentISO >= 1600) isoTip.innerHTML = "<span class='text-red-400'>ISO Tinggi:</span> Sensitif, banyak <b>noise (bintik)</b>.";
+                else if(currentISO >= 400) isoTip.innerHTML = "<span class='text-yellow-400'>ISO Sedang:</span> Seimbang.";
+                else isoTip.innerHTML = "<span class='text-green-400'>ISO Rendah:</span> Gambar jernih, minim noise.";
+
+                if(currentAperture <= 2.8) apTip.innerHTML = "<span class='text-red-400'>Aperture Besar (f kecil):</span> <b>Background blur (Bokeh)</b>.";
+                else if(currentAperture <= 8) apTip.innerHTML = "<span class='text-yellow-400'>Aperture Sedang:</span> Fokus ideal.";
+                else apTip.innerHTML = "<span class='text-green-400'>Aperture Kecil (f besar):</span> <b>Semua objek tajam</b>.";
+
+                if(currentShutter.value >= 0.066) shTip.innerHTML = "<span class='text-red-400'>Shutter Lambat:</span> Rentan <b>Motion Blur</b>.";
+                else if(currentShutter.value >= 0.008) shTip.innerHTML = "<span class='text-yellow-400'>Shutter Normal:</span> Standar.";
+                else shTip.innerHTML = "<span class='text-green-400'>Shutter Cepat:</span> <b>Membekukan gerakan (Freeze)</b>.";
+            }
+            
+            // Keterangan Zoom tetap ditampilkan karena tidak berhubungan langsung dengan target exposure meter
+            if(currentFocalLength <= 24) zoomTip.innerHTML = "<span class='text-blue-400'>Lensa Wide ("+currentFocalLength+"mm):</span> Sudut pandang luas.";
+            else if(currentFocalLength <= 70) zoomTip.innerHTML = "<span class='text-green-400'>Lensa Standar ("+currentFocalLength+"mm):</span> Sudut pandang natural.";
+            else zoomTip.innerHTML = "<span class='text-red-400'>Lensa Tele ("+currentFocalLength+"mm):</span> <b>Background mudah blur</b>.";
+        }
+
+        [uiIso, uiAperture, uiShutter, uiFocus, uiZoom, uiCamX, uiCamY].forEach(el => el.addEventListener('input', updateCameraPhysics));
+
+        document.getElementById('btn-reset-cam').addEventListener('click', () => {
+            uiCamX.value = 0; uiCamY.value = 3; camera.position.set(0, 3, 25); camera.lookAt(0, 3, 0); updateCameraPhysics();
+        });
+
+        // --- SISTEM PENGAMBILAN FOTO & AI PORTRAIT ---
+        const btnCapture = document.getElementById('btn-capture'); const flashOverlay = document.getElementById('flash-overlay');
+        const loadingDiv = document.getElementById('loading-indicator');
+        const matWhite = new THREE.MeshBasicMaterial({color: 0xffffff}); const matBlack = new THREE.MeshBasicMaterial({color: 0x000000});
+
+        function renderMaskFrame(ctx, alpha) {
+            const focusStep = parseInt(uiFocus.value); const origClearColor = renderer.getClearColor(new THREE.Color()); const origClearAlpha = renderer.getClearAlpha();
+            renderer.setClearColor(0x000000, 1); 
+
+            scene.traverse(c => {
+                if(c.isMesh) { c.userData.origMat = c.material; 
+                    if(c.userData.targetGroup === focusStep) c.material = matWhite; else c.material = matBlack; 
+                }
+            });
+            renderer.render(scene, camera); ctx.globalAlpha = alpha; ctx.drawImage(renderer.domElement, 0, 0);
+            scene.traverse(c => { if(c.isMesh && c.userData.origMat) c.material = c.userData.origMat; }); renderer.setClearColor(origClearColor, origClearAlpha);
+        }
+
+        btnCapture.addEventListener('click', () => {
+            uiContainer.classList.add('translate-x-full'); const sTime = currentShutter.value;
+            flashOverlay.style.opacity = '1'; setTimeout(() => { flashOverlay.style.opacity = '0'; }, 50);
+            loadingDiv.classList.remove('hidden'); btnCapture.disabled = true;
+
+            if(sTime <= 0.02) {
+                composer.render();
+                const mainCanvas = document.createElement('canvas'); mainCanvas.width = renderer.domElement.width; mainCanvas.height = renderer.domElement.height;
+                const mainCtx = mainCanvas.getContext('2d'); mainCtx.drawImage(renderer.domElement, 0, 0);
+
+                const maskCanvas = document.createElement('canvas'); maskCanvas.width = renderer.domElement.width; maskCanvas.height = renderer.domElement.height;
+                const maskCtx = maskCanvas.getContext('2d'); renderMaskFrame(maskCtx, 1.0);
+
+                applyAIPortraitBlur(mainCanvas.toDataURL('image/png'), maskCanvas.toDataURL('image/png'), (result) => {
+                    loadingDiv.classList.add('hidden'); btnCapture.disabled = false; showResultPhoto(result);
+                });
+            } else { simulateMotionBlur(sTime); }
+        });
+
+        function simulateMotionBlur(durationInSeconds) {
+            const totalFrames = Math.min(45, Math.floor(durationInSeconds * 60)); let currentFrameCount = 1;
+            const mainCanvas = document.createElement('canvas'); mainCanvas.width = renderer.domElement.width; mainCanvas.height = renderer.domElement.height; const mainCtx = mainCanvas.getContext('2d');
+            const maskCanvas = document.createElement('canvas'); maskCanvas.width = renderer.domElement.width; maskCanvas.height = renderer.domElement.height; const maskCtx = maskCanvas.getContext('2d');
+
+            function captureStep() {
+                const alpha = 1.0 / currentFrameCount; composer.render(); mainCtx.globalAlpha = alpha; mainCtx.drawImage(renderer.domElement, 0, 0);
+                renderMaskFrame(maskCtx, alpha);
+                if (currentFrameCount < totalFrames) { currentFrameCount++; requestAnimationFrame(captureStep); } 
+                else {
+                    applyAIPortraitBlur(mainCanvas.toDataURL('image/png'), maskCanvas.toDataURL('image/png'), (result) => {
+                        loadingDiv.classList.add('hidden'); btnCapture.disabled = false; showResultPhoto(result);
+                    });
+                }
+            } requestAnimationFrame(captureStep);
+        }
+
+        function applyAIPortraitBlur(mainDataUrl, maskDataUrl, callback) {
+            let blurRadius = 0;
+            if (currentFocalLength >= 50) blurRadius = (2.8 / currentAperture) * Math.pow(currentFocalLength / 50, 1.5) * 8;
+            else blurRadius = (2.8 / currentAperture) * 0.8; 
+            blurRadius = Math.min(Math.max(blurRadius, 0), 30); 
+
+            if (blurRadius < 1.5) { callback(mainDataUrl); return; }
+
+            const imgMain = new Image(); const imgMask = new Image();
+            imgMain.onload = () => { imgMask.onload = () => {
+                const w = imgMain.width; const h = imgMain.height;
+                const canvasOut = document.createElement('canvas'); canvasOut.width = w; canvasOut.height = h; const ctxOut = canvasOut.getContext('2d');
+                const canvasBlur = document.createElement('canvas'); canvasBlur.width = w; canvasBlur.height = h; const ctxBlur = canvasBlur.getContext('2d');
+                ctxBlur.filter = `blur(${blurRadius}px)`; ctxBlur.drawImage(imgMain, 0, 0);
+
+                const canvasTempMain = document.createElement('canvas'); canvasTempMain.width = w; canvasTempMain.height = h; const ctxTempMain = canvasTempMain.getContext('2d', { willReadFrequently: true });
+                ctxTempMain.drawImage(imgMain, 0, 0); const mainPixels = ctxTempMain.getImageData(0,0,w,h).data;
+
+                const canvasSoftMask = document.createElement('canvas'); canvasSoftMask.width = w; canvasSoftMask.height = h; const ctxSoftMask = canvasSoftMask.getContext('2d', { willReadFrequently: true });
+                ctxSoftMask.filter = `blur(${blurRadius * 0.15}px)`; ctxSoftMask.drawImage(imgMask, 0, 0); const maskPixels = ctxSoftMask.getImageData(0,0,w,h).data;
+
+                const blurPixels = ctxBlur.getImageData(0,0,w,h).data;
+                const outImageData = ctxOut.createImageData(w,h); const outPixels = outImageData.data;
+
+                for(let i=0; i<mainPixels.length; i+=4) {
+                    const maskVal = maskPixels[i] / 255; 
+                    outPixels[i]   = mainPixels[i] * maskVal + blurPixels[i] * (1 - maskVal);     
+                    outPixels[i+1] = mainPixels[i+1] * maskVal + blurPixels[i+1] * (1 - maskVal); 
+                    outPixels[i+2] = mainPixels[i+2] * maskVal + blurPixels[i+2] * (1 - maskVal); 
+                    outPixels[i+3] = 255; 
+                }
+                ctxOut.putImageData(outImageData, 0, 0); callback(canvasOut.toDataURL('image/png'));
+            }; imgMask.src = maskDataUrl; }; imgMain.src = mainDataUrl;
+        }
+
+        // --- MANAJEMEN GALERI HASIL ---
+        const modal = document.getElementById('gallery-modal');
+        const resImg = document.getElementById('result-image');
+        const missionResult = document.getElementById('mission-result');
+        document.getElementById('btn-close-gallery').addEventListener('click', () => modal.classList.remove('active'));
+
+        function showResultPhoto(dataUrl) {
+            resImg.src = dataUrl;
+            document.getElementById('res-iso').innerText = currentISO;
+            document.getElementById('res-aperture').innerText = 'f/' + currentAperture;
+            document.getElementById('res-shutter').innerText = currentShutter.label;
+            document.getElementById('res-zoom').innerText = currentFocalLength + 'mm';
+
+            const currentEV = Math.log2(Math.pow(currentAperture, 2) / currentShutter.value) - Math.log2(currentISO / 100);
+            const evDiff = targetEV - currentEV;
+            let analysis = "";
+            
+            if(evDiff > 1.5) analysis += "Foto <b>Overexposed</b> (terlalu putih). Kurangi ISO, tutup Aperture, atau percepat Shutter.<br>";
+            else if(evDiff < -1.5) analysis += "Foto <b>Underexposed</b> (gelap). Naikkan ISO, buka Aperture, atau perlambat Shutter.<br>";
+            else analysis += "Pencahayaan <b>sempurna</b>! ";
+
+            if(currentShutter.value >= 0.066) analysis += "Rana lambat membuat baling-baling <b>blur</b>. ";
+            else if (currentShutter.value <= 0.008) analysis += "Baling-baling <b>dibekukan (freeze)</b> dengan rana cepat. ";
+
+            if(currentAperture <= 2.8 || currentFocalLength >= 100) analysis += "Latar belakang <b>bokeh</b> karena lensa tele / bukaan besar. ";
+            else if(currentAperture >= 11) analysis += "Semua rentang tampak <b>tajam</b>. ";
+
+            if(currentISO >= 3200) analysis += "Terlihat <b>noise tinggi</b> karena ISO dipaksakan.";
+            
+            document.getElementById('res-analysis').innerHTML = analysis;
+
+            // Evaluasi Misi jika sedang aktif
+            const actionContainer = document.getElementById('mission-action-container');
+            if(isMissionActive) {
+                missionResult.classList.remove('hidden');
+                if(Math.abs(evDiff) <= 1.5) {
+                    missionResult.innerHTML = "<span class='text-green-400'><i class='fa-solid fa-circle-check'></i> MISI BERHASIL! Anda sukses menyesuaikan Segitiga Eksposur.</span>";
+                    
+                    // Tampilkan tombol isi identitas
+                    actionContainer.classList.remove('hidden'); 
+
+                    // Matikan misi otomatis setelah berhasil
+                    isMissionActive = false;
+                    document.getElementById('mission-status').innerText = 'BEBAS';
+                    document.getElementById('mission-status').className = 'text-xs font-bold px-2 py-0.5 bg-gray-700 rounded text-gray-300';
+                    updateCameraPhysics(); // Segarkan UI agar warna dan tips contekan kembali muncul
+                } else {
+                    missionResult.innerHTML = "<span class='text-red-400'><i class='fa-solid fa-triangle-exclamation'></i> MISI GAGAL! Eksposur masih meleset. Coba lagi!</span>";
+                    actionContainer.classList.add('hidden'); // Sembunyikan tombol form
+                }
+            } else {
+                missionResult.classList.add('hidden');
+                actionContainer.classList.add('hidden'); // Sembunyikan tombol form jika mode bebas
+            }
+
+            modal.classList.add('active');
+        }
+
+        // --- MANAJEMEN FORM GOOGLE ---
+        const formModal = document.getElementById('form-modal');
+        document.getElementById('btn-fill-form').addEventListener('click', () => {
+            formModal.classList.add('active');
+        });
+        document.getElementById('btn-close-form').addEventListener('click', () => {
+            formModal.classList.remove('active');
+        });
+
+        window.onload = init3D;
+
+    </script>
+</body>
+</html>
