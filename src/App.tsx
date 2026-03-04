@@ -21,6 +21,7 @@ export default function App() {
   const [unlockedLevel, setUnlockedLevel] = useState(1);
   const [showChat, setShowChat] = useState(false);
   const [activeModal, setActiveModal] = useState<string | null>(null);
+  const [activePage, setActivePage] = useState<string | null>(null);
 
   const handleUnlockAll = () => {
     if (window.confirm("Cheat Code diaktifkan! Buka semua stage?")) {
@@ -55,39 +56,39 @@ export default function App() {
     },
     {
       id: 3,
-      title: "Pengambilan Gambar",
-      subtitle: "Mission 1",
-      description: "Praktekkan teknik pengambilan gambar dengan penilaian AI.",
+      title: "Tata Cahaya",
+      subtitle: "Lighting Dynamics",
+      description: "Pahami konsep pencahayaan 3 titik.",
       items: [
-        { name: "Misi Kamera AI", icon: Target, action: "misi-kamera-ai" },
-        { name: "Diagnosa AI", icon: MessageCircle, action: "diagnosa-ai" }
+        { name: "Simulasi Pencahayaan", icon: Lightbulb, action: "simulasi-pencahayaan" }
       ]
     },
     {
       id: 4,
-      title: "Tata Cahaya",
-      subtitle: "Lighting Dynamics",
-      description: "Pahami konsep pencahayaan 3 titik dan mood visual.",
+      title: "Pengambilan Gambar",
+      subtitle: "Analisa Gambar Berbasis AI",
+      description: "Praktekkan teknik pengambilan gambar dengan penilaian AI.",
       items: [
-        { name: "Simulasi Pencahayaan", icon: Lightbulb, action: "link" }
+        { name: "Analisa dan Latih Ambil Gambar", icon: Target, action: "https://gemini.google.com/share/d32d5400d73d" },
+        { name: "Analisa dan Latih Komposisi Gambar", icon: Target, action: "https://gemini.google.com/share/264427b3e661" }
       ]
     },
     {
       id: 5,
       title: "Special Equipment",
       subtitle: "Advanced Gear",
-      description: "Kuasai pergerakan alat khusus untuk hasil sinematik.",
+      description: "Kuasai Alat Pendukung",
       items: [
-        { name: "Simulasi Gimbal", icon: Activity, action: "link" },
-        { name: "Simulasi Drone", icon: Navigation, action: "link" },
-        { name: "Teleprompter", icon: MonitorPlay, action: "link" }
+        { name: "Simulasi Gimbal", icon: Activity, action: "simulasi-gimbal" },
+        { name: "Simulasi Drone", icon: Navigation, action: "simulasi-drone" },
+        { name: "Teleprompter", icon: MonitorPlay, action: "teleprompter" }
       ]
     },
     {
       id: 6,
-      title: "Final Boss",
+      title: "Quiz Time",
       subtitle: "Asesmen Akhir",
-      description: "Uji pengetahuan dan keterampilan Anda untuk meraih sertifikat.",
+      description: "Uji pengetahuan dan keterampilan Anda.",
       items: [
         { name: "Mulai Kuis Akhir", icon: CheckSquare, action: "link" }
       ]
@@ -108,26 +109,6 @@ export default function App() {
         return (
           <iframe title="DJI Drone" className="w-full h-full rounded-xl" frameBorder="0" allowFullScreen allow="autoplay; fullscreen; xr-spatial-tracking" src="https://sketchfab.com/models/118222137d0444dbbbcf48d390ef89dd/embed"> </iframe>
         );
-      case 'fotografi':
-        return (
-          <iframe title="Simulasi Fotografi" className="w-full h-full rounded-xl bg-black" frameBorder="0" allowFullScreen src="/simulasi-fotografi.html"> </iframe>
-        );
-      case 'tata-kamera':
-        return (
-          <iframe title="Tata Kamera" className="w-full h-full rounded-xl bg-black" frameBorder="0" allowFullScreen src="/tata-kamera.html"> </iframe>
-        );
-      case 'shot-framing':
-        return (
-          <iframe title="Shot by Framing" className="w-full h-full rounded-xl bg-black" frameBorder="0" allowFullScreen src="/shot-framing.html"> </iframe>
-        );
-      case 'misi-kamera-ai':
-        return (
-          <iframe title="Misi Kamera AI" className="w-full h-full bg-black" frameBorder="0" allowFullScreen allow="camera; microphone; autoplay; fullscreen" src={`/misi-kamera-ai.html?apiKey=${process.env.GEMINI_API_KEY}`}> </iframe>
-        );
-      case 'diagnosa-ai':
-        return (
-          <iframe title="Diagnosa AI" className="w-full h-full bg-white rounded-xl" frameBorder="0" allowFullScreen src="https://gemini.google.com/share/c19d0a94f083"> </iframe>
-        );
       default:
         return null;
     }
@@ -136,6 +117,32 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#0a0f1c] text-slate-200 font-sans selection:bg-cyan-900 selection:text-cyan-100 relative overflow-x-hidden pb-24">
       
+      {/* Full Page View for Simulations */}
+      {activePage && (
+        <div className="fixed inset-0 z-[300] bg-black flex flex-col">
+          <div className="bg-slate-900 border-b border-slate-800 p-4 flex items-center justify-between shrink-0">
+            <h2 className="text-xl font-bold text-white">
+              {activePage === 'fotografi' ? 'Simulasi Fotografi' : activePage === 'tata-kamera' ? 'Tata Kamera' : activePage === 'shot-framing' ? 'Shot by Framing' : activePage === 'simulasi-pencahayaan' ? 'Simulasi Pencahayaan' : activePage === 'simulasi-gimbal' ? 'Simulasi Gimbal' : activePage === 'simulasi-drone' ? 'Simulasi Drone' : 'Teleprompter'}
+            </h2>
+            <button 
+              onClick={() => setActivePage(null)}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+            >
+              <X size={18} /> Kembali
+            </button>
+          </div>
+          <div className="flex-grow relative">
+            <iframe 
+              title="Simulasi" 
+              className="w-full h-full" 
+              frameBorder="0" 
+              allowFullScreen 
+              src={activePage === 'fotografi' ? '/simulasi-fotografi.html' : activePage === 'tata-kamera' ? '/tata-kamera.html' : activePage === 'shot-framing' ? '/shot-framing.html' : activePage === 'simulasi-pencahayaan' ? '/simulasi-pencahayaan.html' : activePage === 'simulasi-gimbal' ? '/simulasi-gimbal.html' : activePage === 'simulasi-drone' ? '/simulasi-drone.html' : '/teleprompter.html'}
+            ></iframe>
+          </div>
+        </div>
+      )}
+
       {/* Welcome Popup */}
       {showWelcome && (
         <div className="fixed inset-0 z-[200] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in zoom-in-95 duration-300 overflow-y-auto">
@@ -292,7 +299,17 @@ export default function App() {
                       <button
                         key={i}
                         disabled={!isUnlocked}
-                        onClick={() => isUnlocked && item.action !== 'link' ? setActiveModal(item.action) : null}
+                        onClick={() => {
+                          if (!isUnlocked) return;
+                          
+                          if (item.action.startsWith('http')) {
+                            window.open(item.action, '_blank');
+                          } else if (['fotografi', 'tata-kamera', 'shot-framing', 'simulasi-pencahayaan', 'simulasi-gimbal', 'simulasi-drone', 'teleprompter'].includes(item.action)) {
+                            setActivePage(item.action);
+                          } else if (item.action !== 'link') {
+                            setActiveModal(item.action);
+                          }
+                        }}
                         className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${
                           isUnlocked 
                             ? 'bg-slate-800/80 border-slate-700 hover:bg-slate-700 hover:border-cyan-500/50 group cursor-pointer' 
@@ -309,7 +326,7 @@ export default function App() {
                         </div>
                         {isUnlocked && (
                           <div className="text-slate-500 group-hover:text-cyan-400 transition-colors">
-                            {item.action === 'link' ? <Play size={14} /> : <Maximize size={14} />}
+                            {item.action === 'link' || item.action.startsWith('http') ? <Play size={14} /> : <Maximize size={14} />}
                           </div>
                         )}
                       </button>
@@ -339,6 +356,11 @@ export default function App() {
               </div>
             );
           })}
+        </div>
+
+        {/* Logo Footer */}
+        <div className="mt-16 mb-8 flex justify-center items-center opacity-70 hover:opacity-100 transition-opacity">
+          <img src="https://i.ibb.co.com/Wp3LQ9ZR/logo.png" alt="Logo Sahabat Sinema" className="h-12 md:h-16 object-contain drop-shadow-lg" referrerPolicy="no-referrer" />
         </div>
       </div>
 

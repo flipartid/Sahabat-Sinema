@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Simulator Drone 3D</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #87CEEB; touch-action: none; font-family: sans-serif; }
+        #canvas-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        
+        /* UI Overlay */
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; }
+        
+        /* Joysticks */
+        .joystick-zone {
+            position: absolute;
+            bottom: 2rem;
+            width: 120px;
+            height: 120px;
+            background-color: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            pointer-events: auto;
+            backdrop-filter: blur(4px);
+            touch-action: none;
+        }
+        
+        .joystick-knob {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 50px;
+            height: 50px;
+            background-color: rgba(255, 255, 255, 0.7);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            pointer-events: none;
+        }
+
+        #joy-left { left: 2rem; }
+        #joy-right { right: 2rem; }
+
+        /* Vertical Slider Customization */
+        input[type=range][orient=vertical] {
+            appearance: slider-vertical;
+            -webkit-appearance: slider-vertical;
+            width: 8px;
+            height: 100%;
+            background: rgba(255,255,255,0.2);
+            border-radius: 4px;
+            outline: none;
+        }
+
+        /* PiP Container & Border Target */
+        #pip-container {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 0.5rem;
+            z-index: 20;
+            pointer-events: none;
+        }
+
+        #pip-border {
+            border: 2px solid rgba(255, 255, 255, 0.6);
+            border-radius: 0.5rem;
+            background-color: rgba(0,0,0,0.3);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            pointer-events: auto;
+            overflow: hidden;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+        }
+
+        @media (max-width: 640px) {
+            .joystick-zone { width: 100px; height: 100px; bottom: 1rem; }
+            .joystick-knob { width: 40px; height: 40px; }
+            #joy-left { left: 1rem; }
+            #joy-right { right: 1rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Container 3D -->
+    <div id="canvas-container"></div>
+
+    <!-- Antarmuka Pengguna (HUD) -->
+    <div id="ui-layer">
+        
+        <!-- Header & Telemetry -->
+        <div class="absolute top-4 left-4 text-white drop-shadow-md flex flex-col gap-2">
+            <div>
+                <h1 class="text-xl md:text-2xl font-bold">Simulator Drone</h1>
+                <span id="main-cam-label" class="bg-blue-600/80 text-white text-xs px-2 py-1 rounded-full font-semibold tracking-wide">KAMERA EKSTERNAL</span>
+            </div>
+            <div class="bg-black/40 p-3 rounded-lg text-sm md:text-base backdrop-blur-sm mt-2 w-48">
+                <div class="flex justify-between gap-4">
+                    <span class="text-gray-300">Ketinggian:</span>
+                    <span id="tele-alt" class="font-mono font-bold text-green-400">0.0 m</span>
+                </div>
+                <div class="flex justify-between gap-4">
+                    <span class="text-gray-300">Kecepatan:</span>
+                    <span id="tele-spd" class="font-mono font-bold text-blue-400">0 km/j</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Gimbal Tilt Control -->
+        <div class="absolute left-4 top-1/2 transform -translate-y-1/2 h-40 w-12 bg-black/40 rounded-xl flex flex-col items-center py-3 pointer-events-auto backdrop-blur-md border border-white/20">
+            <span class="text-white/80 text-[9px] font-bold mb-2 tracking-wider">GIMBAL</span>
+            <input type="range" id="gimbal-tilt" min="-90" max="0" value="0" orient="vertical" class="flex-1 w-2 cursor-pointer">
+            <span class="text-white text-[10px] font-bold mt-2 font-mono" id="gimbal-val">0&deg;</span>
+        </div>
+
+        <!-- Container Picture in Picture -->
+        <div id="pip-container">
+            <!-- Picture in Picture (Layar Kecil) -->
+            <div id="pip-border">
+                <div class="w-full bg-black/50 text-center text-[9px] text-white/90 py-0.5 font-semibold tracking-widest z-10 uppercase pointer-events-none" id="pip-cam-label">
+                    Kamera Drone FPV
+                </div>
+            </div>
+            
+            <!-- Tombol Tukar Kamera di bawah PiP -->
+            <button id="btn-switch-view" class="bg-black/60 hover:bg-black/80 text-white px-3 py-1.5 rounded-md text-[10px] backdrop-blur-sm border border-white/30 transition-colors pointer-events-auto flex items-center gap-1 shadow-md">
+                <span>🔄</span> Tukar Kamera
+            </button>
+        </div>
+
+        <!-- Panel Misi -->
+        <div id="mission-panel" class="absolute top-4 left-1/2 transform -translate-x-1/2 bg-black/70 backdrop-blur-md border border-yellow-400/50 p-3 rounded-xl text-white text-center hidden z-20 shadow-[0_4px_20px_rgba(234,179,8,0.2)] min-w-[200px] pointer-events-auto">
+            <h2 class="text-[10px] font-bold text-yellow-400 mb-1 uppercase tracking-widest flex items-center justify-center gap-2"><span>🎯</span> Misi Aktif</h2>
+            <p id="mission-text" class="text-sm font-semibold">Memuat Misi...</p>
+            <div id="mission-progress" class="mt-2 w-full bg-gray-700 h-1.5 rounded-full overflow-hidden hidden">
+                <div id="mission-bar" class="bg-yellow-400 h-full w-0 transition-all duration-300"></div>
+            </div>
+        </div>
+
+        <!-- Tombol Mulai Misi -->
+        <button id="btn-start-mission" class="absolute bottom-8 md:bottom-12 left-1/2 transform -translate-x-1/2 bg-yellow-500 hover:bg-yellow-400 text-black px-6 py-2.5 rounded-full font-extrabold text-xs shadow-[0_0_15px_rgba(234,179,8,0.5)] z-20 pointer-events-auto transition-transform hover:scale-105 active:scale-95 flex items-center gap-2">
+            <span>🚀</span> MULAI MISI
+        </button>
+
+        <!-- Instruksi Tengah -->
+        <div id="instruction-text" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center text-white/50 pointer-events-none hidden md:block transition-opacity duration-1000 opacity-100">
+            <p class="bg-black/20 px-4 py-2 rounded-full backdrop-blur-sm">Tarik & Tahan Joystick</p>
+        </div>
+
+        <!-- Area Joystick -->
+        <div class="absolute bottom-0 w-full h-40">
+            <!-- Joystick Kiri: Naik/Turun (Throttle) & Putar (Yaw) -->
+            <div id="joy-left" class="joystick-zone">
+                <div class="absolute -top-6 w-full text-center text-xs text-white/80 font-semibold drop-shadow">Naik/Turun & Putar</div>
+                <div class="joystick-knob"></div>
+            </div>
+
+            <!-- Joystick Kanan: Maju/Mundur (Pitch) & Kiri/Kanan (Roll) -->
+            <div id="joy-right" class="joystick-zone">
+                <div class="absolute -top-6 w-full text-center text-xs text-white/80 font-semibold drop-shadow">Maju/Mundur & Geser</div>
+                <div class="joystick-knob"></div>
+            </div>
+        </div>
+
+        <!-- Overlay Drone Jatuh -->
+        <div id="crash-overlay" class="absolute inset-0 z-40 hidden flex-col items-center justify-center pointer-events-none bg-red-900/30 backdrop-blur-[2px]">
+            <h1 class="text-red-500 text-5xl md:text-7xl font-black drop-shadow-[0_4px_10px_rgba(0,0,0,0.8)] mb-6 text-center">DRONE JATUH!</h1>
+            <button id="btn-reset-drone" class="pointer-events-auto bg-white text-red-600 px-8 py-3 rounded-full font-extrabold shadow-[0_0_20px_rgba(255,255,255,0.5)] hover:scale-105 active:scale-95 transition-transform">Reset Posisi</button>
+        </div>
+
+        <!-- Popup Formulir Selamat (Muncul setelah 3 misi) -->
+        <div id="congrats-popup" class="absolute inset-0 bg-black/80 z-50 hidden flex-col items-center justify-center p-4 backdrop-blur-sm pointer-events-auto">
+            <div class="bg-white rounded-xl overflow-hidden max-w-2xl w-full h-[90%] md:h-[85%] flex flex-col relative shadow-2xl">
+                <div class="bg-green-600 text-white p-4 text-center shrink-0">
+                    <h2 class="text-2xl font-bold flex justify-center items-center gap-2"><span>🏆</span> SELAMAT!</h2>
+                    <p class="text-sm mt-1 text-green-100">Anda telah berhasil menyelesaikan 3 misi navigasi.</p>
+                </div>
+                <div class="flex-1 w-full bg-gray-100 relative overflow-hidden">
+                    <iframe src="https://docs.google.com/forms/d/e/1FAIpQLSfwytzdaR4uLe9RJVEA2f042PPdV1pyNh8CHe1gZ2yJKe0QMw/viewform?embedded=true" width="100%" height="100%" frameborder="0" marginheight="0" marginwidth="0" class="absolute inset-0">Loading…</iframe>
+                </div>
+                <button id="btn-close-popup" class="absolute top-3 right-3 text-white bg-black/30 hover:bg-black/50 rounded-full w-8 h-8 flex items-center justify-center font-bold transition-colors">&times;</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Variabel Kontrol Global
+        const input = {
+            throttle: 0, yaw: 0, pitch: 0, roll: 0
+        };
+
+        // UI Referensi
+        const gimbalSlider = document.getElementById('gimbal-tilt');
+        const gimbalVal = document.getElementById('gimbal-val');
+        const btnSwitch = document.getElementById('btn-switch-view');
+        const pipBorder = document.getElementById('pip-border');
+        const mainLabel = document.getElementById('main-cam-label');
+        const pipLabel = document.getElementById('pip-cam-label');
+
+        let isFPVMain = false; // Status apakah FPV (Kamera drone) menjadi layar utama
+
+        // Update teks slider gimbal
+        gimbalSlider.addEventListener('input', (e) => {
+            gimbalVal.innerHTML = `${e.target.value}&deg;`;
+        });
+
+        // Tukar Kamera Main / PiP
+        btnSwitch.addEventListener('click', () => {
+            isFPVMain = !isFPVMain;
+            if (isFPVMain) {
+                mainLabel.innerText = "KAMERA DRONE (FPV)";
+                mainLabel.className = "bg-red-600/80 text-white text-xs px-2 py-1 rounded-full font-semibold tracking-wide";
+                pipLabel.innerText = "Kamera Eksternal";
+            } else {
+                mainLabel.innerText = "KAMERA EKSTERNAL";
+                mainLabel.className = "bg-blue-600/80 text-white text-xs px-2 py-1 rounded-full font-semibold tracking-wide";
+                pipLabel.innerText = "Kamera Drone FPV";
+            }
+        });
+
+        // --- Logika Misi Random ---
+        const btnStartMission = document.getElementById('btn-start-mission');
+        const missionPanel = document.getElementById('mission-panel');
+        const missionText = document.getElementById('mission-text');
+        const missionBar = document.getElementById('mission-bar');
+        const missionProgress = document.getElementById('mission-progress');
+        
+        let currentMission = null;
+        let missionsCompleted = 0; // Tambahan: Menghitung misi yang berhasil
+
+        // Logika Tombol UI Tambahan
+        const crashOverlay = document.getElementById('crash-overlay');
+        const btnResetDrone = document.getElementById('btn-reset-drone');
+        const congratsPopup = document.getElementById('congrats-popup');
+        const btnClosePopup = document.getElementById('btn-close-popup');
+
+        btnStartMission.addEventListener('click', startRandomMission);
+
+        function startRandomMission() {
+            btnStartMission.classList.add('hidden');
+            missionPanel.classList.remove('hidden');
+            missionProgress.classList.add('hidden'); // Sembunyikan progress bar karena hanya misi navigasi
+            
+            if(waypointMesh) waypointMesh.visible = false;
+            
+            const objs = window.environmentObjects;
+            let targetX, targetY, targetZ, locText;
+
+            if (objs && objs.length > 0) {
+                // Pilih objek acak sebagai patokan lokasi
+                const obj = objs[Math.floor(Math.random() * objs.length)];
+                const rel = Math.floor(Math.random() * 3); // 0: Atas, 1: Samping, 2: Bawah/Menyentuh tanah
+
+                targetX = obj.x;
+                targetZ = obj.z;
+
+                if (rel === 0) {
+                    targetY = obj.y + 3; // Di atas objek
+                    locText = `di atas ${obj.type}`;
+                } else if (rel === 1) {
+                    targetY = obj.y / 2; // Di tengah-tengah tinggi objek (menyamping)
+                    targetX += (Math.random() > 0.5 ? 3.5 : -3.5); 
+                    targetZ += (Math.random() > 0.5 ? 3.5 : -3.5);
+                    locText = `di samping ${obj.type}`;
+                } else {
+                    targetY = 2; // Dekat tanah menyentuh objek
+                    targetX += (Math.random() > 0.5 ? 4 : -4);
+                    targetZ += (Math.random() > 0.5 ? 4 : -4);
+                    locText = `di dekat bagian bawah ${obj.type}`;
+                }
+            } else {
+                targetX = (Math.random() - 0.5) * 80;
+                targetZ = (Math.random() - 0.5) * 80;
+                targetY = Math.random() * 20 + 5;
+                locText = "di udara";
+            }
+
+            currentMission = { 
+                type: 'waypoint', 
+                target: new THREE.Vector3(targetX, targetY, targetZ),
+                completed: false 
+            };
+            
+            waypointMesh.position.copy(currentMission.target);
+            waypointMesh.visible = true;
+            missionText.innerText = `Cari & Lewati Cincin\n(${locText})!`;
+        }
+
+        function completeMission() {
+            currentMission.completed = true;
+            missionsCompleted++;
+            
+            if (missionsCompleted >= 3) {
+                missionText.innerHTML = `🎉 3 MISI SELESAI!`;
+            } else {
+                missionText.innerHTML = `🎉 MISI BERHASIL!`;
+            }
+            
+            setTimeout(() => {
+                missionPanel.classList.add('hidden');
+                
+                if (missionsCompleted >= 3) {
+                    congratsPopup.classList.remove('hidden');
+                    congratsPopup.classList.add('flex');
+                } else {
+                    btnStartMission.classList.remove('hidden');
+                    btnStartMission.innerHTML = "<span>🚀</span> MISI LAINNYA";
+                }
+                
+                currentMission = null;
+                if(waypointMesh) waypointMesh.visible = false;
+            }, 2500);
+        }
+
+        btnResetDrone.addEventListener('click', () => {
+            isCrashed = false;
+            droneGroup.position.set(0, 0.5, 0); // Kembalikan ke titik awal
+            dronePhysics.velocity.set(0, 0, 0);
+            dronePhysics.rotation.set(0, 0, 0);
+            droneGroup.rotation.set(0, 0, 0);
+            crashOverlay.classList.remove('flex');
+            crashOverlay.classList.add('hidden');
+        });
+
+        btnClosePopup.addEventListener('click', () => {
+            congratsPopup.classList.add('hidden');
+            congratsPopup.classList.remove('flex');
+            missionsCompleted = 0; // Reset hitungan jika ingin main lagi
+            btnStartMission.classList.remove('hidden');
+            btnStartMission.innerHTML = "<span>🚀</span> MISI LAINNYA";
+        });
+
+        // --- Logika Joystick Analog ---
+        let instructionHidden = false;
+
+        function setupJoystick(elementId, axisXCallback, axisYCallback) {
+            const zone = document.getElementById(elementId);
+            const knob = zone.querySelector('.joystick-knob');
+            let active = false;
+            let center = { x: 0, y: 0 };
+            let maxRadius = 0;
+
+            function updateMetrics() {
+                const rect = zone.getBoundingClientRect();
+                maxRadius = rect.width / 2;
+                center = { x: maxRadius, y: maxRadius };
+            }
+
+            function handleMove(e) {
+                if (!active) return;
+                e.preventDefault();
+                const rect = zone.getBoundingClientRect();
+                let x = e.clientX - rect.left - center.x;
+                let y = e.clientY - rect.top - center.y;
+
+                const distance = Math.sqrt(x * x + y * y);
+                if (distance > maxRadius) {
+                    x = (x / distance) * maxRadius;
+                    y = (y / distance) * maxRadius;
+                }
+                knob.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
+                axisXCallback(x / maxRadius);
+                axisYCallback(-(y / maxRadius)); 
+            }
+
+            zone.addEventListener('pointerdown', (e) => {
+                active = true;
+                updateMetrics();
+                zone.setPointerCapture(e.pointerId);
+                handleMove(e);
+
+                // Sembunyikan teks instruksi secara perlahan setelah disentuh
+                if (!instructionHidden) {
+                    instructionHidden = true;
+                    setTimeout(() => {
+                        const instText = document.getElementById('instruction-text');
+                        if (instText) {
+                            instText.classList.remove('opacity-100');
+                            instText.classList.add('opacity-0');
+                        }
+                    }, 1500); // Teks memudar setelah 1.5 detik dimainkan
+                }
+            });
+            zone.addEventListener('pointermove', handleMove);
+
+            function resetJoystick(e) {
+                active = false;
+                if(e) zone.releasePointerCapture(e.pointerId);
+                knob.style.transform = `translate(-50%, -50%) translate(0px, 0px)`;
+                axisXCallback(0);
+                axisYCallback(0);
+            }
+            zone.addEventListener('pointerup', resetJoystick);
+            zone.addEventListener('pointercancel', resetJoystick);
+            window.addEventListener('resize', updateMetrics);
+        }
+
+        setupJoystick('joy-left', (val) => input.yaw = val, (val) => input.throttle = val);
+        setupJoystick('joy-right', (val) => input.roll = val, (val) => input.pitch = val);
+
+        // --- Setup Three.js Scene ---
+        let scene, chaseCamera, fpvCamera, renderer, droneGroup, waypointMesh;
+        let propellers = [];
+        let isCrashed = false; // Flag status tabrakan
+        window.obstacleBoxes = []; // Array untuk menyimpan bounding box pepohonan & gedung
+
+        const dronePhysics = {
+            velocity: new THREE.Vector3(0, 0, 0),
+            rotation: new THREE.Vector3(0, 0, 0)
+        };
+
+        // Layout Konfigurasi PiP
+        let pipConfig = { w: 0, h: 0, x: 0, y: 0, threeJsY: 0 };
+
+        function updatePiPLayout() {
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            
+            // Ukuran PiP: 25% dari lebar layar, min 150px, max 300px
+            pipConfig.w = Math.max(150, Math.min(300, w * 0.25));
+            pipConfig.h = (pipConfig.w / (w / h)); // Sesuaikan rasio aspek layar
+            
+            pipConfig.x = w - pipConfig.w - 16; // 1rem padding kanan (CSS)
+            pipConfig.y = 16; // 1rem padding atas (Sesuai top: 1rem di CSS)
+            pipConfig.threeJsY = h - pipConfig.y - pipConfig.h; // Y untuk render WebGL (dari bawah layar)
+
+            // Sinkronkan div CSS border PiP
+            pipBorder.style.width = pipConfig.w + 'px';
+            pipBorder.style.height = pipConfig.h + 'px';
+
+            chaseCamera.aspect = w / h;
+            chaseCamera.updateProjectionMatrix();
+            fpvCamera.aspect = w / h;
+            fpvCamera.updateProjectionMatrix();
+            renderer.setSize(w, h);
+        }
+
+        function init3D() {
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87CEEB); 
+            scene.fog = new THREE.FogExp2(0x87CEEB, 0.015);
+
+            // 1. Kamera Eksternal (Chase Camera)
+            chaseCamera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            // 2. Kamera Drone (FPV / Onboard Camera) - Sudut pandang lebih luas khas action cam
+            fpvCamera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.05, 1000);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            container.appendChild(renderer.domElement);
+
+            const ambientLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+            scene.add(ambientLight);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(20, 40, 20);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            scene.add(dirLight);
+
+            // Objek Visual Misi (Cincin Waypoint tanpa pilar agar fokus ke 3D/Ketinggian)
+            const waypointGroup = new THREE.Group();
+            const ringGeo = new THREE.TorusGeometry(2.5, 0.3, 16, 32);
+            const ringMat = new THREE.MeshBasicMaterial({ color: 0xffff00, transparent: true, opacity: 0.9 });
+            const ring = new THREE.Mesh(ringGeo, ringMat);
+            
+            // Tambahkan cahaya agar cincin memancarkan terang dan mudah dicari
+            const ringLight = new THREE.PointLight(0xffff00, 1.5, 30);
+            
+            waypointGroup.add(ring);
+            waypointGroup.add(ringLight);
+
+            waypointMesh = waypointGroup;
+            waypointMesh.visible = false; // Sembunyikan sampai misi dimulai
+            scene.add(waypointMesh);
+
+            // Lantai & Grid
+            const groundGeo = new THREE.PlaneGeometry(300, 300);
+            const groundMat = new THREE.MeshLambertMaterial({ color: 0x4d7532 });
+            const ground = new THREE.Mesh(groundGeo, groundMat);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            const gridHelper = new THREE.GridHelper(300, 150, 0xffffff, 0xffffff);
+            gridHelper.material.opacity = 0.2;
+            gridHelper.material.transparent = true;
+            scene.add(gridHelper);
+
+            // Objek Pemandangan (Pohon/Gedung) untuk Kamera FPV
+            const obstacleMat = new THREE.MeshLambertMaterial({ color: 0xcc5500 });
+            const treeMat = new THREE.MeshLambertMaterial({ color: 0x2e8b57 });
+            window.environmentObjects = []; // Simpan data objek untuk lokasi misi
+            window.obstacleBoxes = []; // Reset box tabrakan
+            
+            for(let i=0; i<30; i++) {
+                // Gedung
+                const h = Math.random() * 10 + 2;
+                const bx = (Math.random() - 0.5) * 100;
+                const bz = (Math.random() - 0.5) * 100;
+                const building = new THREE.Mesh(new THREE.BoxGeometry(2, h, 2), obstacleMat);
+                building.position.set(bx, h/2, bz);
+                if(building.position.length() > 8) {
+                    building.castShadow = true; building.receiveShadow = true;
+                    scene.add(building);
+                    window.environmentObjects.push({x: bx, y: h, z: bz, type: 'gedung'});
+                    
+                    // Buat area tabrakan (Bounding Box)
+                    const bBox = new THREE.Box3().setFromObject(building);
+                    bBox.expandByScalar(0.4); // Toleransi ukuran drone
+                    window.obstacleBoxes.push(bBox);
+                }
+                // Pohon
+                const treeH = Math.random() * 5 + 3;
+                const tx = (Math.random() - 0.5) * 100;
+                const tz = (Math.random() - 0.5) * 100;
+                const tree = new THREE.Mesh(new THREE.CylinderGeometry(0, 1.5, treeH, 8), treeMat);
+                tree.position.set(tx, treeH/2, tz);
+                if(tree.position.length() > 8) {
+                    tree.castShadow = true; tree.receiveShadow = true;
+                    scene.add(tree);
+                    window.environmentObjects.push({x: tx, y: treeH, z: tz, type: 'pohon'});
+                    
+                    // Buat area tabrakan (Bounding Box)
+                    const tBox = new THREE.Box3().setFromObject(tree);
+                    tBox.expandByScalar(0.4); // Toleransi ukuran drone
+                    window.obstacleBoxes.push(tBox);
+                }
+            }
+
+            // --- Model Drone ---
+            droneGroup = new THREE.Group();
+            
+            const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.2, 0.8), new THREE.MeshLambertMaterial({ color: 0x222222 }));
+            body.castShadow = true; droneGroup.add(body);
+
+            const front = new THREE.Mesh(new THREE.BoxGeometry(0.81, 0.21, 0.1), new THREE.MeshLambertMaterial({ color: 0xff3300 }));
+            front.position.z = -0.36; droneGroup.add(front);
+
+            // Modul Kamera Fisik pada Drone (sebagai dekorasi)
+            const camMod = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), new THREE.MeshLambertMaterial({ color: 0x111111 }));
+            camMod.position.set(0, -0.15, -0.4);
+            droneGroup.add(camMod);
+
+            const armGeo = new THREE.CylinderGeometry(0.05, 0.05, 1.2);
+            const armMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
+            const propGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.02, 16);
+            const propMat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 });
+
+            [{x:0.5, z:0.5}, {x:-0.5, z:0.5}, {x:0.5, z:-0.5}, {x:-0.5, z:-0.5}].forEach(pos => {
+                const arm = new THREE.Mesh(armGeo, armMat);
+                arm.position.set(pos.x/2, 0, pos.z/2);
+                arm.rotation.x = Math.PI / 2; arm.rotation.z = Math.atan2(pos.x, pos.z);
+                droneGroup.add(arm);
+
+                const motor = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.2), new THREE.MeshLambertMaterial({ color: 0x222222 }));
+                motor.position.set(pos.x, 0.1, pos.z);
+                motor.castShadow = true; droneGroup.add(motor);
+
+                const prop = new THREE.Mesh(propGeo, propMat);
+                prop.position.set(pos.x, 0.2, pos.z);
+                droneGroup.add(prop); propellers.push(prop);
+            });
+
+            droneGroup.position.y = 0.5; 
+            scene.add(droneGroup);
+
+            updatePiPLayout();
+            window.addEventListener('resize', updatePiPLayout);
+        }
+
+        // --- Loop Fisika dan Animasi ---
+        const clock = new THREE.Clock();
+        const MAX_TILT = Math.PI / 4; 
+        const ACCELERATION = 15.0;     
+        const LIFT_POWER = 12.0;       
+        const GRAVITY = 9.8;           
+        const DRAG = 0.95;             
+        const YAW_SPEED = 2.0;         
+        
+        const teleAlt = document.getElementById('tele-alt');
+        const teleSpd = document.getElementById('tele-spd');
+
+        function gameLoop() {
+            requestAnimationFrame(gameLoop);
+            const dt = Math.min(clock.getDelta(), 0.1); 
+
+            // 1. Update Animasi Baling-baling (berhenti jika jatuh)
+            const propSpeed = isCrashed ? 0 : 10 + Math.abs(input.throttle) * 20 + Math.abs(input.pitch) * 5 + Math.abs(input.roll) * 5;
+            propellers.forEach((prop, i) => prop.rotation.y += (i % 2 === 0 ? 1 : -1) * propSpeed * dt);
+
+            if (!isCrashed) {
+                // 2. Terapkan Input ke Rotasi (Kemiringan Drone) normal
+                dronePhysics.rotation.x = THREE.MathUtils.lerp(dronePhysics.rotation.x, -input.pitch * MAX_TILT, 5 * dt);
+                dronePhysics.rotation.z = THREE.MathUtils.lerp(dronePhysics.rotation.z, -input.roll * MAX_TILT, 5 * dt);
+                dronePhysics.rotation.y += -input.yaw * YAW_SPEED * dt;
+                
+                // 3. Vektor Pergerakan & Akselerasi
+                const localUp = new THREE.Vector3(0, 1, 0).applyEuler(new THREE.Euler(dronePhysics.rotation.x, dronePhysics.rotation.y, dronePhysics.rotation.z, 'YXZ'));
+                dronePhysics.velocity.y += (input.throttle * LIFT_POWER) * dt;
+                dronePhysics.velocity.x += localUp.x * ACCELERATION * dt;
+                dronePhysics.velocity.z += localUp.z * ACCELERATION * dt;
+                dronePhysics.velocity.multiplyScalar(DRAG);
+
+                // Cek Tabrakan dengan Objek (Gedung & Pohon)
+                const dronePos = droneGroup.position;
+                for (let box of window.obstacleBoxes) {
+                    if (box.containsPoint(dronePos)) {
+                        isCrashed = true;
+                        crashOverlay.classList.remove('hidden');
+                        crashOverlay.classList.add('flex');
+                        
+                        // Pantulkan sedikit saat menabrak
+                        dronePhysics.velocity.x *= -0.5;
+                        dronePhysics.velocity.z *= -0.5;
+                        dronePhysics.velocity.y = 2; 
+
+                        // Batalkan misi jika sedang berjalan
+                        if (currentMission) {
+                            currentMission = null;
+                            missionPanel.classList.add('hidden');
+                            btnStartMission.classList.remove('hidden');
+                            if (waypointMesh) waypointMesh.visible = false;
+                        }
+                        break;
+                    }
+                }
+            } else {
+                // Fisika saat drone JATUH
+                dronePhysics.velocity.y -= GRAVITY * dt; // Jatuh bebas
+                dronePhysics.velocity.multiplyScalar(0.99); // Gesekan udara
+                
+                // Drone terguling saat jatuh
+                dronePhysics.rotation.x += 5 * dt;
+                dronePhysics.rotation.z += 3 * dt;
+            }
+
+            droneGroup.rotation.set(dronePhysics.rotation.x, dronePhysics.rotation.y, dronePhysics.rotation.z, 'YXZ');
+
+            // 4. Update Posisi Drone
+            droneGroup.position.addScaledVector(dronePhysics.velocity, dt);
+
+            // Ground Collision
+            if (droneGroup.position.y < 0.2) {
+                droneGroup.position.y = 0.2;
+                dronePhysics.velocity.y = 0;
+                dronePhysics.velocity.x *= 0.8;
+                dronePhysics.velocity.z *= 0.8;
+
+                if (isCrashed) {
+                    // Berhenti terguling saat menyentuh tanah
+                    dronePhysics.rotation.x = 0;
+                    dronePhysics.rotation.z = 0;
+                    droneGroup.rotation.set(0, dronePhysics.rotation.y, 0, 'YXZ');
+                }
+            }
+
+            // 5. Update Chase Camera (Eksternal)
+            const cameraOffset = new THREE.Vector3(0, 3, 6);
+            cameraOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), dronePhysics.rotation.y);
+            chaseCamera.position.lerp(droneGroup.position.clone().add(cameraOffset), 5 * dt);
+            chaseCamera.lookAt(droneGroup.position);
+
+            // 6. Update FPV Camera & Gimbal Stabilizer
+            // Kamera selalu mengikuti rotasi horizontal drone (Yaw), tetapi menetralkan Pitch & Roll
+            const fpvOffset = new THREE.Vector3(0, -0.15, -0.45); // Taruh di moncong drone
+            fpvOffset.applyEuler(droneGroup.rotation); // Terapkan rotasi miring fisik
+            fpvCamera.position.copy(droneGroup.position).add(fpvOffset);
+
+            // Rotasi Kamera Gimbal: Yaw ikut drone, Pitch ikut slider gimbal, Roll rata (0)
+            const gimbalTilt = (parseFloat(gimbalSlider.value) * Math.PI) / 180;
+            fpvCamera.rotation.set(gimbalTilt, dronePhysics.rotation.y, 0, 'YXZ');
+
+            // 7. Update Telemetri
+            const altitude = Math.max(0, droneGroup.position.y - 0.2);
+            const speed = Math.sqrt(dronePhysics.velocity.x**2 + dronePhysics.velocity.z**2) * 3.6;
+            teleAlt.innerText = altitude.toFixed(1) + " m";
+            teleSpd.innerText = Math.round(speed) + " km/j";
+
+            // --- 8. LOGIKA PENYELESAIAN MISI ---
+            if (currentMission && !currentMission.completed) {
+                // Animasi putaran cincin (rotasi X dan Y agar memutar 3D)
+                waypointMesh.children[0].rotation.x += 1 * dt;
+                waypointMesh.children[0].rotation.y += 2 * dt; 
+                
+                // Cek Jarak secara 3D (X, Y, Z) karena sekarang ketinggian sangat penting
+                const dist = droneGroup.position.distanceTo(currentMission.target);
+                if (dist < 3.0) completeMission(); // Toleransi jarak 3.0 meter
+            }
+
+            // --- 9. MULTI-PASS RENDERING (DUA KAMERA) ---
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+
+            const mainCam = isFPVMain ? fpvCamera : chaseCamera;
+            const pipCam = isFPVMain ? chaseCamera : fpvCamera;
+
+            // Render Layar Utama (Latar Belakang)
+            renderer.setViewport(0, 0, w, h);
+            renderer.setScissor(0, 0, w, h);
+            renderer.setScissorTest(true);
+            renderer.render(scene, mainCam);
+
+            // Render Layar PiP (Pojok Kanan Atas)
+            renderer.setViewport(pipConfig.x, pipConfig.threeJsY, pipConfig.w, pipConfig.h);
+            renderer.setScissor(pipConfig.x, pipConfig.threeJsY, pipConfig.w, pipConfig.h);
+            renderer.setScissorTest(true);
+            renderer.render(scene, pipCam);
+        }
+
+        window.onload = function() {
+            init3D();
+            gameLoop();
+        };
+
+    </script>
+</body>
+</html>

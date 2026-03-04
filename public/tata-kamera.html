@@ -134,6 +134,15 @@
                     <button class="cam-btn text-[10px] bg-purple-900/80 border border-purple-700/80 hover:bg-purple-800 py-1.5 px-1 rounded text-center transition font-bold" data-category="move" data-type="arc">🎬 ARC</button>
                     <button class="cam-btn text-[10px] bg-amber-900/80 border border-amber-700/80 hover:bg-amber-800 py-1.5 px-1 rounded text-center transition font-bold" data-category="toggle" data-type="float">🌊 FLOAT</button>
                 </div>
+
+                <button id="btn-combo-toggle" class="w-full mt-1 text-[10px] bg-rose-900/80 border border-rose-700/80 hover:bg-rose-800 py-1.5 px-1 rounded text-center transition font-bold">✨ COMBINATION</button>
+                
+                <div id="combo-grid" class="hidden grid-cols-2 gap-1 mt-1">
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1.5 px-1 rounded text-center transition" data-category="move" data-type="dolly_zoom">Dolly Zoom</button>
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1.5 px-1 rounded text-center transition" data-category="move" data-type="pan_tilt">Pan + Tilt</button>
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1.5 px-1 rounded text-center transition" data-category="move" data-type="track_pan">Track + Pan</button>
+                    <button class="cam-btn text-[10px] bg-gray-800/80 border border-gray-600/80 hover:bg-gray-700 py-1.5 px-1 rounded text-center transition" data-category="move" data-type="ped_tilt">Ped + Tilt</button>
+                </div>
             </div>
 
             <div class="h-6"></div>
@@ -182,10 +191,19 @@
 
             <!-- Hideable Info Panel -->
             <div class="absolute bottom-4 left-4 z-40 flex flex-col items-start gap-2 pointer-events-none">
-                <!-- Tombol Tampilkan Info (Tersembunyi by default) -->
-                <button onclick="toggleInfo(true)" id="show-info-btn" class="hidden pointer-events-auto bg-blue-600/90 hover:bg-blue-500 text-white px-3 py-1.5 rounded-full border border-blue-400 shadow-lg flex items-center gap-2 text-xs backdrop-blur transition">
-                    ℹ️ Tampilkan Info
-                </button>
+                <div class="flex gap-2 pointer-events-auto">
+                    <!-- Tombol Tampilkan Info (Tersembunyi by default) -->
+                    <button onclick="toggleInfo(true)" id="show-info-btn" class="hidden bg-blue-600/90 hover:bg-blue-500 text-white px-3 py-1.5 rounded-full border border-blue-400 shadow-lg flex items-center gap-2 text-xs backdrop-blur transition">
+                        ℹ️ Tampilkan Info
+                    </button>
+                    <!-- Tombol Replay (Tersembunyi by default) -->
+                    <button id="btn-replay" class="hidden bg-emerald-600/90 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-full border border-emerald-400 shadow-lg flex items-center gap-2 text-xs backdrop-blur transition">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Replay
+                    </button>
+                </div>
 
                 <!-- Panel Konten Info -->
                 <div id="info-panel" class="pointer-events-auto bg-black/80 backdrop-blur-md border border-gray-600 rounded-lg p-3 md:p-4 max-w-[90vw] md:max-w-sm shadow-2xl panel-transition opacity-100 translate-y-0">
@@ -242,7 +260,12 @@
             'ped_down': { title: 'Pedestal Down', desc: 'Badan kamera turun vertikal secara fisik.' },
             
             'arc':      { title: 'Arc Movement', desc: 'Kamera bergerak melingkar mengelilingi subjek. Menambah dinamika dramatis atau menunjukkan situasi 360 derajat.' },
-            'float':    { title: 'Float / Handheld (Toggle)', desc: 'Simulasi kamera dipegang tangan. Menambah kesan realisme, dokumenter, atau situasi tegang.' }
+            'float':    { title: 'Float / Handheld (Toggle)', desc: 'Simulasi kamera dipegang tangan. Menambah kesan realisme, dokumenter, atau situasi tegang.' },
+            
+            'dolly_zoom': { title: 'Dolly Zoom (Vertigo Effect)', desc: 'Kamera bergerak maju (Dolly In) sementara lensa melakukan Zoom Out (atau sebaliknya). Latar belakang tampak berubah ukuran secara dramatis sementara ukuran subjek tetap.' },
+            'pan_tilt': { title: 'Pan + Tilt (Diagonal)', desc: 'Kombinasi menoleh ke samping (Pan) dan mendongak/menunduk (Tilt) secara bersamaan.' },
+            'track_pan': { title: 'Track + Pan (Parallax)', desc: 'Kamera bergeser fisik ke samping (Crab/Track) sambil menoleh (Pan) berlawanan arah untuk tetap menyorot subjek.' },
+            'ped_tilt': { title: 'Pedestal + Tilt (Crane Shot)', desc: 'Kamera naik secara fisik (Pedestal Up) sambil menunduk (Tilt Down) untuk mempertahankan subjek dalam bingkai.' }
         };
 
         // --- THREE.JS SETUP ---
@@ -546,10 +569,46 @@
             camModelGrp.visible = isExternalView;
         });
 
+        document.getElementById('btn-combo-toggle').addEventListener('click', () => {
+            const grid = document.getElementById('combo-grid');
+            if (grid.classList.contains('hidden')) {
+                grid.classList.remove('hidden');
+                grid.classList.add('grid');
+            } else {
+                grid.classList.add('hidden');
+                grid.classList.remove('grid');
+            }
+        });
+
+        let lastMovementType = null;
+
+        document.getElementById('btn-replay').addEventListener('click', () => {
+            if (lastMovementType) {
+                executeMovementAnimation(lastMovementType);
+            } else {
+                // Jika tidak ada movement, hitung ulang target posisi (untuk shot/angle)
+                calculateTarget();
+                currentPos.copy(targetPos);
+                currentLook.copy(targetLook);
+                currentFov = targetFov;
+                camera.fov = targetFov;
+                camera.updateProjectionMatrix();
+                currentRoll = 0;
+            }
+        });
+
         document.querySelectorAll('.cam-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const category = e.target.dataset.category;
                 const type = e.target.dataset.type;
+
+                // Auto-hide menu when a simulation is selected
+                if (isMenuOpen) {
+                    toggleMenu();
+                }
+                
+                // Show replay button
+                document.getElementById('btn-replay').classList.remove('hidden');
 
                 // Handle Toggle (Float/Handheld)
                 if (category === 'toggle') {
@@ -575,6 +634,7 @@
                     
                     // Reset styling of move buttons
                     document.querySelectorAll('.cam-btn[data-category="move"]').forEach(b => b.classList.remove('ring-2', 'ring-white'));
+                    lastMovementType = null;
                 } 
                 else if (category === 'move') {
                     document.querySelectorAll('.cam-btn[data-category="move"]').forEach(b => b.classList.remove('ring-2', 'ring-white'));
@@ -582,6 +642,7 @@
 
                     let info = infoData[type];
                     updateInfoUI(info.title, info.desc);
+                    lastMovementType = type;
                     executeMovementAnimation(type);
                 }
             });
@@ -592,6 +653,9 @@
             isHandheld = false;
             activeShot = 'ms';
             activeAngle = 'eye';
+            lastMovementType = null;
+            
+            document.getElementById('btn-replay').classList.add('hidden');
             
             document.querySelectorAll('.cam-btn').forEach(b => b.classList.remove('btn-active', 'ring-2', 'ring-white', 'btn-toggle-on'));
             document.querySelector('.cam-btn[data-type="ms"]').classList.add('btn-active');
@@ -611,6 +675,14 @@
                 targetPos.set(0, 1.4, 3); targetLook.set(0, 1.4, 0); targetFov = 50; targetRoll = 0;
             } else if (type.includes('crab') || type.includes('ped')) {
                 targetPos.set(0, 1.2, 4); targetLook.set(0, 1.2, 0); targetFov = 50; targetRoll = 0;
+            } else if (type === 'dolly_zoom') {
+                targetPos.set(0, 1.2, 2); targetLook.set(0, 1.2, 0); targetFov = 90; targetRoll = 0;
+            } else if (type === 'pan_tilt') {
+                targetPos.set(0, 1.4, 3); targetLook.set(-3, 0.5, 0); targetFov = 50; targetRoll = 0;
+            } else if (type === 'track_pan') {
+                targetPos.set(-3, 1.2, 4); targetLook.set(0, 1.2, 0); targetFov = 50; targetRoll = 0;
+            } else if (type === 'ped_tilt') {
+                targetPos.set(0, 0.5, 4); targetLook.set(0, 1.2, 0); targetFov = 50; targetRoll = 0;
             }
 
             if (type !== 'arc') {
@@ -637,6 +709,21 @@
                         isArcing = true;
                         arcAngle = Math.atan2(currentPos.x - currentLook.x, currentPos.z - currentLook.z);
                         arcRadius = currentPos.distanceTo(currentLook);
+                        break;
+                    case 'dolly_zoom':
+                        targetPos.z = 8.0;
+                        targetFov = 15;
+                        break;
+                    case 'pan_tilt':
+                        targetLook.set(3, 2.5, 0);
+                        break;
+                    case 'track_pan':
+                        targetPos.x = 3;
+                        targetLook.set(0, 1.2, 0);
+                        break;
+                    case 'ped_tilt':
+                        targetPos.y = 3.5;
+                        targetLook.set(0, 1.2, 0);
                         break;
                 }
             }, 50);

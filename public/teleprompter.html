@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teleprompter Cerdas Offline</title>
+    <style>
+        /* Gaya Dasar */
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --bg-color: #f9fafb;
+            --surface: #ffffff;
+            --text-main: #1f2937;
+            --text-muted: #6b7280;
+            --border: #e5e7eb;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: var(--bg-color); color: var(--text-main); line-height: 1.5; }
+        
+        /* Tampilan Setup */
+        #setup-view { padding: 2rem; max-w-width: 1200px; margin: 0 auto; max-width: 1100px;}
+        header { margin-bottom: 2rem; }
+        h1 { color: var(--primary); display: flex; align-items: center; gap: 0.5rem; font-size: 2rem; }
+        
+        .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; }
+        @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+        
+        .card { background: var(--surface); border: 1px solid var(--border); border-radius: 1rem; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column;}
+        
+        .flex-between { display: flex; justify-content: space-between; align-items: center; }
+        .flex-center { display: flex; justify-content: center; align-items: center; }
+        
+        textarea { width: 100%; min-height: 400px; padding: 1rem; border: 1px solid var(--border); border-radius: 0.5rem; font-size: 1.1rem; resize: vertical; margin-top: 1rem; font-family: inherit; flex-grow: 1;}
+        textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2); }
+        
+        label.upload-btn { background: #eff6ff; color: var(--primary); padding: 0.5rem 1rem; border-radius: 0.5rem; cursor: pointer; display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; font-weight: 600; transition: background 0.2s; }
+        label.upload-btn:hover { background: #dbeafe; }
+        input[type="file"] { display: none; }
+        
+        /* Pengaturan Panel */
+        h2 { font-size: 1.25rem; border-bottom: 1px solid var(--border); padding-bottom: 0.75rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem; }
+        .setting-group { margin-bottom: 1.5rem; }
+        .setting-header { display: flex; justify-content: space-between; font-size: 0.875rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text-muted); }
+        .setting-value { color: var(--primary); font-weight: bold; }
+        
+        input[type="range"] { width: 100%; cursor: pointer; accent-color: var(--primary); height: 6px; background: var(--border); border-radius: 4px; appearance: none; outline: none; }
+        input[type="range"]::-webkit-slider-thumb { appearance: none; width: 16px; height: 16px; background: var(--primary); border-radius: 50%; }
+        
+        .toggle-btn { width: 100%; display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: 0.5rem; cursor: pointer; margin-bottom: 0.75rem; transition: all 0.2s; font-size: 0.9rem; font-weight: 500; }
+        .toggle-btn.active { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+        
+        .toggle-switch { width: 40px; height: 24px; background: var(--border); border-radius: 12px; position: relative; transition: background 0.3s; }
+        .toggle-btn.active .toggle-switch { background: var(--primary); }
+        .toggle-circle { width: 18px; height: 18px; background: white; border-radius: 50%; position: absolute; top: 3px; left: 3px; transition: transform 0.3s; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+        .toggle-btn.active .toggle-circle { transform: translateX(16px); }
+
+        .btn-primary { width: 100%; background: var(--primary); color: white; border: none; padding: 1rem; border-radius: 0.75rem; font-size: 1rem; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-top: auto; transition: background 0.2s; }
+        .btn-primary:hover { background: var(--primary-hover); }
+        
+        /* Info Panel */
+        .info-toggle { background: none; border: none; color: var(--primary); cursor: pointer; display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; margin-top: 1rem; font-weight: 600; }
+        #info-panel { display: none; background: #eff6ff; border: 1px solid #bfdbfe; padding: 1.25rem; border-radius: 0.75rem; margin-top: 1rem; font-size: 0.9rem; }
+        
+        /* Tampilan Prompter */
+        #prompter-view { display: none; position: fixed; inset: 0; background: black; color: white; flex-direction: column; overflow: hidden; }
+        
+        /* Hilangkan Scrollbar */
+        #prompter-scroll { flex-grow: 1; overflow: hidden; padding: 50vh 10vw; position: relative; }
+        
+        #prompter-text { max-width: 1000px; margin: 0 auto; line-height: 1.5; white-space: pre-wrap; transform-origin: center center; padding-bottom: 50vh; will-change: transform; }
+        
+        .focus-line { position: absolute; top: 50%; left: 0; right: 0; height: 4rem; margin-top: -2rem; background: linear-gradient(to right, transparent, rgba(255,255,255,0.1), transparent); pointer-events: none; border-top: 1px solid rgba(255,255,255,0.1); border-bottom: 1px solid rgba(255,255,255,0.1); }
+        
+        .controls-overlay { position: absolute; bottom: 2rem; left: 50%; transform: translateX(-50%); background: rgba(31, 41, 55, 0.8); backdrop-filter: blur(8px); padding: 0.75rem 1.5rem; border-radius: 3rem; display: flex; align-items: center; gap: 1.5rem; border: 1px solid rgba(255,255,255,0.1); opacity: 0.3; transition: opacity 0.3s; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        .controls-overlay:hover { opacity: 1; }
+        
+        .control-btn { background: none; border: none; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: color 0.2s; }
+        .control-btn:hover { color: #9ca3af; }
+        .control-btn.play-btn { background: var(--primary); width: 3.5rem; height: 3.5rem; border-radius: 50%; box-shadow: 0 4px 6px rgba(0,0,0,0.3); transition: transform 0.1s, background 0.2s; }
+        .control-btn.play-btn:hover { background: var(--primary-hover); color: white; transform: scale(1.05); }
+        .control-btn.play-btn:active { transform: scale(0.95); }
+        
+        .divider { width: 1px; height: 2rem; background: rgba(255,255,255,0.2); }
+        .speed-control { display: flex; align-items: center; gap: 0.5rem; width: 120px; }
+        .speed-control input { height: 4px; }
+    </style>
+</head>
+<body>
+
+    <!-- TAMPILAN SETUP -->
+    <div id="setup-view">
+        <header>
+            <h1>
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>
+                Teleprompter Cerdas
+            </h1>
+            <p style="color: var(--text-muted); margin-top: 0.5rem;">Atur teks dan layar Anda sebelum memulai presentasi.</p>
+            
+            <button class="info-toggle" id="btn-info">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                <span id="info-text">Apa itu Teleprompter?</span>
+            </button>
+            
+            <div id="info-panel">
+                <h3 style="color: var(--primary); margin-bottom: 0.5rem;">Mengenal Teleprompter</h3>
+                <p style="margin-bottom: 1rem;"><strong>Teleprompter</strong> adalah alat penampil teks yang dirancang untuk membantu pembicara membaca naskah sambil tetap mempertahankan kontak mata dengan audiens atau lensa kamera. Alat ini biasanya menggunakan cermin satu arah yang diletakkan pada sudut 45 derajat di depan lensa kamera.</p>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div>
+                        <h4 style="color: var(--primary); margin-bottom: 0.25rem;">Dalam Broadcasting</h4>
+                        <p>Pembawa berita menggunakan teleprompter setiap hari. Naskah dipantulkan tepat di depan lensa kamera, sehingga mereka tampak seperti sedang berbicara langsung kepada penonton dari ingatan mereka tanpa harus menunduk.</p>
+                    </div>
+                    <div>
+                        <h4 style="color: var(--primary); margin-bottom: 0.25rem;">Dalam Perfilman</h4>
+                        <p>Sangat berguna ketika subjek harus menyampaikan pesan panjang tanpa kesalahan. Alat ini menghemat waktu produksi karena meminimalisir pengambilan gambar ulang akibat lupa naskah.</p>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div class="grid">
+            <!-- Editor Teks -->
+            <div class="card">
+                <div class="flex-between">
+                    <label style="font-weight: 600;">Teks Naskah</label>
+                    <label class="upload-btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                        Unggah File .txt
+                        <input type="file" id="file-upload" accept=".txt">
+                    </label>
+                </div>
+                <textarea id="script-text" placeholder="Ketik atau tempel naskah Anda di sini..."></textarea>
+            </div>
+
+            <!-- Pengaturan -->
+            <div class="card">
+                <h2>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                    Pengaturan Layar
+                </h2>
+
+                <div class="setting-group">
+                    <div class="setting-header">
+                        <span>Kecepatan Gulir</span>
+                        <span class="setting-value" id="val-speed">3</span>
+                    </div>
+                    <input type="range" id="input-speed" min="1" max="20" value="3">
+                </div>
+
+                <div class="setting-group">
+                    <div class="setting-header">
+                        <span>Ukuran Teks</span>
+                        <span class="setting-value" id="val-font">64px</span>
+                    </div>
+                    <input type="range" id="input-font" min="24" max="120" value="64">
+                </div>
+
+                <div class="setting-group" style="margin-top: 1rem; border-top: 1px solid var(--border); padding-top: 1rem;">
+                    <div class="setting-header" style="margin-bottom: 1rem;">Transformasi Layar</div>
+                    
+                    <div class="toggle-btn" id="btn-mirror">
+                        <span style="display: flex; align-items: center; gap: 0.5rem;">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="8 3 4 7 8 11"></polyline><line x1="4" y1="7" x2="20" y2="7"></line><polyline points="16 21 20 17 16 13"></polyline><line x1="20" y1="17" x2="4" y2="17"></line></svg>
+                            Cermin (Mirror)
+                        </span>
+                        <div class="toggle-switch"><div class="toggle-circle"></div></div>
+                    </div>
+
+                    <div class="toggle-btn" id="btn-reverse">
+                        <span style="display: flex; align-items: center; gap: 0.5rem;">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 8 7 4 11 8"></polyline><line x1="7" y1="4" x2="7" y2="20"></line><polyline points="21 16 17 20 13 16"></polyline><line x1="17" y1="20" x2="17" y2="4"></line></svg>
+                            Balik (Reverse)
+                        </span>
+                        <div class="toggle-switch"><div class="toggle-circle"></div></div>
+                    </div>
+                </div>
+
+                <button class="btn-primary" id="btn-start">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                    Mulai Teleprompter
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAMPILAN PROMPTER -->
+    <div id="prompter-view">
+        <div id="prompter-scroll">
+            <div id="prompter-text"></div>
+        </div>
+        
+        <div class="focus-line"></div>
+        
+        <div class="controls-overlay">
+            <button class="control-btn" id="btn-stop" title="Berhenti & Kembali">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>
+            </button>
+            
+            <div class="divider"></div>
+            
+            <button class="control-btn" id="btn-restart" title="Mulai Ulang (Restart)">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><polyline points="3 3 3 8 8 8"></polyline></svg>
+            </button>
+
+            <div class="divider"></div>
+            
+            <button class="control-btn play-btn" id="btn-playpause" title="Jeda/Mulai">
+                <!-- Icon Play SVG (Default) -->
+                <svg id="icon-play" width="28" height="28" viewBox="0 0 24 24" fill="currentColor" style="margin-left: 4px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                <!-- Icon Pause SVG (Hidden) -->
+                <svg id="icon-pause" width="28" height="28" viewBox="0 0 24 24" fill="currentColor" style="display: none;"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+            </button>
+            
+            <div class="divider"></div>
+            
+            <div class="speed-control" title="Pengatur Kecepatan">
+                <span style="font-size: 0.75rem; color: #9ca3af;">1</span>
+                <input type="range" id="prompter-speed" min="1" max="20" value="3">
+                <span style="font-size: 0.75rem; color: #9ca3af;">20</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State Application
+        let state = {
+            text: "Selamat datang di Aplikasi Teleprompter.\n\nAnda dapat mengganti teks ini dengan mengetik langsung di kotak teks, atau dengan mengunggah file .txt dari perangkat Anda.\n\nGunakan menu di sebelah kanan untuk mengatur kecepatan, ukuran teks, serta mode cermin (mirror) dan balik (reverse) sesuai dengan kebutuhan layar atau rig teleprompter Anda.\n\nTekan tombol 'Mulai Teleprompter' untuk memulai.",
+            speed: 3,
+            fontSize: 64,
+            flipH: false,
+            flipV: false,
+            isPlaying: false
+        };
+
+        // Load dari Local Storage jika ada
+        if (localStorage.getItem('tp_text') !== null) state.text = localStorage.getItem('tp_text');
+        if (localStorage.getItem('tp_speed') !== null) state.speed = Number(localStorage.getItem('tp_speed'));
+        if (localStorage.getItem('tp_fontSize') !== null) state.fontSize = Number(localStorage.getItem('tp_fontSize'));
+        if (localStorage.getItem('tp_flipH') !== null) state.flipH = localStorage.getItem('tp_flipH') === 'true';
+        if (localStorage.getItem('tp_flipV') !== null) state.flipV = localStorage.getItem('tp_flipV') === 'true';
+
+        // DOM Elements
+        const elSetupView = document.getElementById('setup-view');
+        const elPrompterView = document.getElementById('prompter-view');
+        
+        const elScriptText = document.getElementById('script-text');
+        const elInputSpeed = document.getElementById('input-speed');
+        const elInputFont = document.getElementById('input-font');
+        const elValSpeed = document.getElementById('val-speed');
+        const elValFont = document.getElementById('val-font');
+        const elBtnMirror = document.getElementById('btn-mirror');
+        const elBtnReverse = document.getElementById('btn-reverse');
+        const elFileUpload = document.getElementById('file-upload');
+        const elBtnStart = document.getElementById('btn-start');
+        
+        const elPrompterText = document.getElementById('prompter-text');
+        const elPrompterScroll = document.getElementById('prompter-scroll');
+        const elBtnStop = document.getElementById('btn-stop');
+        const elBtnRestart = document.getElementById('btn-restart');
+        const elBtnPlayPause = document.getElementById('btn-playpause');
+        const elPrompterSpeed = document.getElementById('prompter-speed');
+        const iconPlay = document.getElementById('icon-play');
+        const iconPause = document.getElementById('icon-pause');
+        
+        const btnInfo = document.getElementById('btn-info');
+        const infoPanel = document.getElementById('info-panel');
+        const infoText = document.getElementById('info-text');
+
+        // Fungsi Simpan State ke LocalStorage
+        function saveState() {
+            localStorage.setItem('tp_text', state.text);
+            localStorage.setItem('tp_speed', state.speed);
+            localStorage.setItem('tp_fontSize', state.fontSize);
+            localStorage.setItem('tp_flipH', state.flipH);
+            localStorage.setItem('tp_flipV', state.flipV);
+        }
+
+        // Fungsi Update UI Setup
+        function updateSetupUI() {
+            elScriptText.value = state.text;
+            
+            elInputSpeed.value = state.speed;
+            elPrompterSpeed.value = state.speed;
+            elValSpeed.textContent = state.speed;
+            
+            elInputFont.value = state.fontSize;
+            elValFont.textContent = state.fontSize + 'px';
+            
+            if (state.flipH) elBtnMirror.classList.add('active');
+            else elBtnMirror.classList.remove('active');
+            
+            if (state.flipV) elBtnReverse.classList.add('active');
+            else elBtnReverse.classList.remove('active');
+        }
+
+        // Initialize UI
+        updateSetupUI();
+
+        // Event Listeners - Setup
+        elScriptText.addEventListener('input', (e) => { state.text = e.target.value; saveState(); });
+        
+        elInputSpeed.addEventListener('input', (e) => { 
+            state.speed = Number(e.target.value); 
+            elValSpeed.textContent = state.speed; 
+            elPrompterSpeed.value = state.speed;
+            saveState(); 
+        });
+        
+        elInputFont.addEventListener('input', (e) => { 
+            state.fontSize = Number(e.target.value); 
+            elValFont.textContent = state.fontSize + 'px'; 
+            saveState(); 
+        });
+
+        elBtnMirror.addEventListener('click', () => {
+            state.flipH = !state.flipH;
+            updateSetupUI();
+            saveState();
+        });
+
+        elBtnReverse.addEventListener('click', () => {
+            state.flipV = !state.flipV;
+            updateSetupUI();
+            saveState();
+        });
+
+        // File Upload
+        elFileUpload.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                state.text = event.target.result;
+                updateSetupUI();
+                saveState();
+            };
+            reader.readAsText(file);
+        });
+
+        // Info Toggle
+        let isInfoOpen = false;
+        btnInfo.addEventListener('click', () => {
+            isInfoOpen = !isInfoOpen;
+            infoPanel.style.display = isInfoOpen ? 'block' : 'none';
+            infoText.textContent = isInfoOpen ? 'Sembunyikan Informasi' : 'Apa itu Teleprompter?';
+        });
+
+        // Teleprompter Logic
+        let animationFrameId;
+        let currentScrollY = 0;
+        let lastTime = 0;
+
+        function animateScroll(timestamp) {
+            if (!lastTime) lastTime = timestamp;
+            const deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
+
+            if (state.isPlaying) {
+                // Kecepatan pengguliran disesuaikan (multiplier)
+                // Menggunakan deltaTime agar kecepatan konsisten di berbagai refresh rate layar
+                currentScrollY += (state.speed * 0.5) * (deltaTime / 16.67);
+                
+                // Terapkan scroll menggunakan transform translateY untuk performa lebih baik di mobile
+                elPrompterText.style.transform = `scaleX(${state.flipH ? -1 : 1}) scaleY(${state.flipV ? -1 : 1}) translateY(-${currentScrollY}px)`;
+            }
+            animationFrameId = requestAnimationFrame(animateScroll);
+        }
+
+        function updatePrompterUI() {
+            if (state.isPlaying) {
+                iconPlay.style.display = 'none';
+                iconPause.style.display = 'block';
+            } else {
+                iconPlay.style.display = 'block';
+                iconPause.style.display = 'none';
+            }
+        }
+
+        elBtnStart.addEventListener('click', () => {
+            elPrompterText.textContent = state.text || "Tidak ada teks untuk ditampilkan.";
+            elPrompterText.style.fontSize = state.fontSize + 'px';
+            
+            // Terapkan Mirror / Reverse
+            let scaleX = state.flipH ? -1 : 1;
+            let scaleY = state.flipV ? -1 : 1;
+            elPrompterText.style.transform = `scaleX(${scaleX}) scaleY(${scaleY}) translateY(0px)`;
+
+            elSetupView.style.display = 'none';
+            elPrompterView.style.display = 'flex';
+            
+            // Reset Scroll
+            currentScrollY = 0;
+            lastTime = 0;
+            
+            state.isPlaying = true;
+            updatePrompterUI();
+            animationFrameId = requestAnimationFrame(animateScroll);
+        });
+
+        elBtnStop.addEventListener('click', () => {
+            state.isPlaying = false;
+            cancelAnimationFrame(animationFrameId);
+            
+            elPrompterView.style.display = 'none';
+            elSetupView.style.display = 'block';
+        });
+
+        elBtnRestart.addEventListener('click', () => {
+            // Kembalikan guliran (scroll) ke posisi paling awal secara instan
+            currentScrollY = 0;
+            let scaleX = state.flipH ? -1 : 1;
+            let scaleY = state.flipV ? -1 : 1;
+            elPrompterText.style.transform = `scaleX(${scaleX}) scaleY(${scaleY}) translateY(0px)`;
+            
+            // Otomatis mainkan jika statusnya sedang jeda (pause)
+            if (!state.isPlaying) {
+                state.isPlaying = true;
+                updatePrompterUI();
+                lastTime = 0;
+            }
+        });
+
+        elBtnPlayPause.addEventListener('click', () => {
+            state.isPlaying = !state.isPlaying;
+            updatePrompterUI();
+        });
+
+        elPrompterSpeed.addEventListener('input', (e) => {
+            state.speed = Number(e.target.value);
+            elInputSpeed.value = state.speed;
+            elValSpeed.textContent = state.speed;
+            saveState();
+        });
+
+    </script>
+</body>
+</html>

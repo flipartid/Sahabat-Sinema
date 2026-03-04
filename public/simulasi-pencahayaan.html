@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Lighting Simulator</title>
+    <!-- Tailwind CSS untuk Styling UI -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #111; color: #eee; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #canvas-container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; }
+        .control-group { border-bottom: 1px solid #333; padding: 1rem; }
+        .control-group:last-child { border-bottom: none; }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1a1a1a; }
+        ::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+
+        /* Custom Range Slider */
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%; background: #3b82f6; cursor: pointer; margin-top: -6px; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: #444; border-radius: 2px; }
+        
+        /* Custom Color Picker */
+        input[type="color"] { -webkit-appearance: none; border: none; width: 100%; height: 30px; border-radius: 4px; cursor: pointer; background: none; }
+        input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+        input[type="color"]::-webkit-color-swatch { border: 1px solid #555; border-radius: 4px; }
+
+        .header-title { background: linear-gradient(90deg, #3b82f6, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    </style>
+</head>
+<body>
+
+    <!-- 3D Canvas -->
+    <div id="canvas-container"></div>
+
+    <!-- Tombol Mulai Misi -->
+    <button id="btn-toggle-mission" class="absolute top-5 left-1/2 transform -translate-x-1/2 bg-purple-600 hover:bg-purple-500 text-white px-6 py-2.5 rounded-full shadow-[0_5px_15px_rgba(147,51,234,0.4)] z-10 font-bold text-sm transition-transform hover:scale-105 border border-purple-400/50">
+        🚀 Mulai Mode Misi
+    </button>
+
+    <!-- Mission Toolbar (Navigasi Misi Mengambang) -->
+    <div id="mission-toolbar" class="absolute bottom-6 left-1/2 transform -translate-x-1/2 flex flex-wrap justify-center items-center gap-2 z-10 hidden bg-[#1a1a24]/95 border border-purple-500/50 rounded-xl p-3 shadow-[0_10px_30px_rgba(0,0,0,0.8)] backdrop-blur-md w-[95%] sm:w-auto">
+        <span id="msn-indicator" class="text-purple-400 font-bold text-sm px-2 w-full sm:w-auto text-center">Misi 1</span>
+        <button id="btn-msn-info" class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded font-semibold text-xs transition-colors shadow-md">ℹ️ Info Misi</button>
+        <button id="btn-view-target" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded font-semibold text-xs transition-colors cursor-pointer select-none shadow-md">👁️ Tahan Lihat Target</button>
+        <button id="btn-check-msn" class="bg-green-600 hover:bg-green-500 text-white px-3 py-2 rounded font-semibold text-xs transition-colors shadow-md">✅ Cek Hasil</button>
+        <button id="btn-quit-msn" class="bg-red-600 hover:bg-red-500 text-white px-3 py-2 rounded font-bold text-xs transition-colors shadow-md" title="Keluar dari Misi">X</button>
+    </div>
+
+    <!-- Mission Modal (Dialog Info & Hasil) -->
+    <div id="mission-modal" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-[#1a1a24]/95 border border-purple-500/50 rounded-xl p-6 shadow-[0_20px_50px_rgba(0,0,0,0.9)] z-30 w-[90%] sm:w-[400px] backdrop-blur-md hidden flex-col text-center transition-opacity">
+        <h3 class="text-purple-400 font-bold text-lg mb-2 uppercase tracking-widest" id="msn-modal-title">Misi 1</h3>
+        <p class="text-gray-300 text-sm mb-5 leading-relaxed" id="msn-modal-desc">Deskripsi misi...</p>
+        <div id="msn-feedback" class="mb-4 text-xs font-bold w-full p-3 rounded hidden"></div>
+        <div class="flex flex-col gap-2">
+            <button id="btn-open-form" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded font-bold text-sm transition-colors mx-auto hidden w-full shadow-lg">📝 Isi Identitas (Bukti Selesai)</button>
+            <button id="btn-close-modal" class="bg-purple-600 hover:bg-purple-500 text-white px-6 py-2 rounded font-bold text-sm transition-colors mx-auto w-full">Mulai Meracik</button>
+        </div>
+    </div>
+
+    <!-- Form Modal (Untuk Google Form) -->
+    <div id="form-modal" class="absolute top-0 left-0 w-full h-full bg-black/80 z-50 hidden flex-col items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-gray-200 rounded-xl w-full max-w-2xl h-[95%] sm:h-[85%] relative flex flex-col shadow-2xl overflow-hidden">
+            <div class="bg-blue-600 p-3 flex justify-between items-center shadow-md z-10">
+                <h3 class="text-white font-bold">Formulir Penyelesaian</h3>
+                <button id="btn-close-form" class="bg-red-500 hover:bg-red-400 text-white w-8 h-8 rounded-full font-bold shadow-lg flex items-center justify-center">X</button>
+            </div>
+            <div class="flex-1 w-full bg-white overflow-hidden">
+                <iframe src="https://docs.google.com/forms/d/e/1FAIpQLScL_kNnJTtztccNzY6i_BigF2eP03SND6774FK7TmoAJkUF2Q/viewform?embedded=true" width="100%" height="100%" frameborder="0" marginheight="0" marginwidth="0">Loading…</iframe>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel Materi (Kiri) -->
+    <div id="materi-panel" class="absolute top-0 left-0 h-screen z-20 flex transition-transform duration-300 -translate-x-full">
+        <div class="w-[300px] sm:w-[350px] h-full bg-[#141419]/95 border-r border-gray-700 overflow-y-auto shadow-[10px_0_20px_rgba(0,0,0,0.5)] backdrop-blur-md flex flex-col text-sm">
+            <div class="p-5 border-b border-gray-700 bg-gray-800/50">
+                <h2 class="text-xl font-bold text-blue-400 mb-1 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                    </svg>
+                    Buku Panduan
+                </h2>
+                <p class="text-xs text-gray-400">Dasar-dasar Tata Cahaya 3 Titik</p>
+            </div>
+            
+            <div class="p-5 space-y-6 text-gray-300">
+                <section>
+                    <h3 class="text-white font-semibold mb-2 border-b border-gray-700 pb-1">Apa itu 3-Point Lighting?</h3>
+                    <p class="text-xs leading-relaxed text-gray-400">Metode standar yang digunakan dalam video, film, dan fotografi untuk menyinari subjek dengan sempurna. Teknik ini memisahkan subjek dari latar belakang dan memberikan dimensi kedalaman.</p>
+                </section>
+
+                <section>
+                    <h3 class="text-blue-400 font-semibold mb-2 flex items-center">1. Key Light <span class="text-[10px] bg-blue-600/30 text-blue-300 px-2 py-0.5 rounded ml-2">Cahaya Utama</span></h3>
+                    <ul class="text-xs list-disc list-inside space-y-1 text-gray-400">
+                        <li>Sumber cahaya paling terang dan dominan.</li>
+                        <li>Fungsi: Membentuk wujud subjek dan menciptakan bayangan utama.</li>
+                        <li>Posisi: Biasanya 45 derajat di salah satu sisi kamera.</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h3 class="text-green-400 font-semibold mb-2 flex items-center">2. Fill Light <span class="text-[10px] bg-green-600/30 text-green-300 px-2 py-0.5 rounded ml-2">Cahaya Pengisi</span></h3>
+                    <ul class="text-xs list-disc list-inside space-y-1 text-gray-400">
+                        <li>Fungsi: Melembutkan bayangan kasar yang dihasilkan oleh Key Light agar detil wajah tetap terlihat.</li>
+                        <li>Intensitas: Sekitar 30-50% dari Key Light (lebih redup).</li>
+                        <li>Posisi: Berada di sisi berlawanan dari Key Light.</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h3 class="text-purple-400 font-semibold mb-2 flex items-center">3. Back Light <span class="text-[10px] bg-purple-600/30 text-purple-300 px-2 py-0.5 rounded ml-2">Cahaya Belakang</span></h3>
+                    <ul class="text-xs list-disc list-inside space-y-1 text-gray-400">
+                        <li>Fungsi: Memisahkan subjek dari latar belakang (membuat kesan 3D). Sering disebut <i>Rim Light</i> atau <i>Hair Light</i>.</li>
+                        <li>Posisi: Diletakkan di belakang subjek, seringkali diarahkan ke bahu atau rambut.</li>
+                    </ul>
+                </section>
+            </div>
+        </div>
+        
+        <!-- Tombol Toggle Panel Materi -->
+        <button id="toggle-materi-btn" class="absolute top-6 -right-10 bg-gray-800 border border-l-0 border-gray-700 hover:bg-gray-700 text-gray-300 p-2 rounded-r-lg shadow-[5px_5px_15px_rgba(0,0,0,0.5)] cursor-pointer transition-colors flex items-center justify-center w-10 h-12 group" title="Buka Materi Pembelajaran">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-blue-400 group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+            </svg>
+        </button>
+    </div>
+
+    <!-- Panel Pengaturan (Kanan) -->
+    <div id="ui-container" class="absolute top-0 right-0 h-screen z-20 flex transition-transform duration-300 translate-x-0">
+        <!-- Tombol Toggle Panel Pengaturan -->
+        <button id="toggle-controls-btn" class="absolute top-6 -left-10 bg-gray-800 border border-r-0 border-gray-700 hover:bg-gray-700 text-gray-300 p-2 rounded-l-lg shadow-[-5px_5px_15px_rgba(0,0,0,0.5)] cursor-pointer transition-colors flex items-center justify-center w-10 h-12 group" title="Buka/Tutup Pengaturan">
+            <svg id="toggle-controls-icon" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-blue-400 group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+            </svg>
+        </button>
+
+        <!-- Konten Pengaturan -->
+        <div class="w-[300px] sm:w-[350px] h-full bg-[#141419]/95 border-l border-gray-700 overflow-y-auto shadow-[-10px_0_20px_rgba(0,0,0,0.5)] backdrop-blur-md flex flex-col text-sm">
+            <div class="p-5 border-b border-gray-700">
+                <h1 class="text-xl font-bold header-title mb-1">Lighting Studio 3D</h1>
+                <p class="text-xs text-gray-400">Simulator Pencahayaan</p>
+            </div>
+
+            <!-- Global Settings -->
+            <div class="control-group">
+                <h2 class="font-semibold text-sm text-gray-300 mb-3 uppercase tracking-wider flex justify-between items-center">
+                    <span>Pengaturan Global</span>
+                    <label class="flex items-center space-x-2 text-xs cursor-pointer text-blue-400">
+                        <!-- Default Garis Bantu Dimatikan (Dihapus checked) -->
+                        <input type="checkbox" id="show-helpers" class="form-checkbox h-3 w-3 text-blue-600 rounded">
+                        <span>Tampilkan Garis Bantu</span>
+                    </label>
+                </h2>
+                <div class="space-y-3">
+                    <div>
+                        <div class="flex justify-between text-xs mb-1 text-gray-400">
+                            <label>Cahaya Ambien (Ambient Light)</label>
+                            <span id="val-ambient">0.1</span>
+                        </div>
+                        <input type="range" id="ambient-intensity" min="0" max="1" step="0.05" value="0.1">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Key Light Controls -->
+            <div class="control-group border-l-4 border-blue-500 bg-gray-900/50">
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="font-semibold text-sm text-blue-400 uppercase tracking-wider">Lampu Utama (Key Light)</h2>
+                    <input type="checkbox" id="key-enable" checked class="h-4 w-4 cursor-pointer">
+                </div>
+                <div class="space-y-3">
+                    <div>
+                        <div class="flex justify-between text-xs mb-1"><label>Intensitas</label><span id="val-key-int">1.0</span></div>
+                        <input type="range" id="key-int" min="0" max="3" step="0.1" value="1.0">
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-xs mb-1"><label>Sudut Orbit</label><span id="val-key-ang">45°</span></div>
+                        <input type="range" id="key-ang" min="-180" max="180" step="1" value="45">
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-xs mb-1"><label>Ketinggian</label><span id="val-key-hgt">5.0</span></div>
+                        <input type="range" id="key-hgt" min="0" max="15" step="0.5" value="5.0">
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-xs mb-1"><label>Warna Lampu</label></div>
+                        <input type="color" id="key-color" value="#ffffff">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fill Light Controls -->
+            <div class="control-group border-l-4 border-green-500">
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="font-semibold text-sm text-green-400 uppercase tracking-wider">Lampu Pengisi (Fill Light)</h2>
+                    <input type="checkbox" id="fill-enable" class="h-4 w-4 cursor-pointer">
+                </div>
+                <div class="space-y-3">
+                    <div>
+                        <div class="flex justify-between text-xs mb-1"><label>Intensitas</label><span id="val-fill-int">0.4</span></div>
+                        <input type="range" id="fill-int" min="0" max="3" step="0.1" value="0.4">
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-xs mb-1"><label>Sudut Orbit</label><span id="val-fill-ang">-45°</span></div>
+                        <input type="range" id="fill-ang" min="-180" max="180" step="1" value="-45">
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-xs mb-1"><label>Ketinggian</label><span id="val-fill-hgt">3.0</span></div>
+                        <input type="range" id="fill-hgt" min="0" max="15" step="0.5" value="3.0">
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-xs mb-1"><label>Warna Lampu</label></div>
+                        <input type="color" id="fill-color" value="#e0f0ff">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Back Light Controls -->
+            <div class="control-group border-l-4 border-purple-500 bg-gray-900/50">
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="font-semibold text-sm text-purple-400 uppercase tracking-wider">Lampu Belakang (Back Light)</h2>
+                    <input type="checkbox" id="back-enable" class="h-4 w-4 cursor-pointer">
+                </div>
+                <div class="space-y-3">
+                    <div>
+                        <div class="flex justify-between text-xs mb-1"><label>Intensitas</label><span id="val-back-int">0.8</span></div>
+                        <input type="range" id="back-int" min="0" max="3" step="0.1" value="0.8">
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-xs mb-1"><label>Sudut Orbit</label><span id="val-back-ang">-160°</span></div>
+                        <input type="range" id="back-ang" min="-180" max="180" step="1" value="-160">
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-xs mb-1"><label>Ketinggian</label><span id="val-back-hgt">7.0</span></div>
+                        <input type="range" id="back-hgt" min="0" max="15" step="0.5" value="7.0">
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-xs mb-1"><label>Warna Lampu</label></div>
+                        <input type="color" id="back-color" value="#ffe0e0">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Inisialisasi Setup Three.js ---
+        let scene, camera, renderer, controls;
+        let ambientLight;
+        
+        // Objek Lampu
+        const lights = {
+            key: { light: null, helper: null, fixture: null, stand: null, panelMat: null, dist: 10 },
+            fill: { light: null, helper: null, fixture: null, stand: null, panelMat: null, dist: 10 },
+            back: { light: null, helper: null, fixture: null, stand: null, panelMat: null, dist: 12 }
+        };
+
+        // Flag untuk helpers - Default False
+        let showHelpers = false;
+
+        init();
+        animate();
+
+        function init() {
+            const container = document.getElementById('canvas-container');
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a1a);
+            scene.fog = new THREE.Fog(0x1a1a1a, 10, 50);
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(0, 5, 15);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.0;
+            container.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.target.set(0, 3, 0); 
+            controls.maxDistance = 30;
+            controls.minDistance = 5;
+
+            buildEnvironment();
+            buildSubject();
+            setupLights();
+            setupUIHandlers();
+
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        // ... Environment & Subject Code (Sama dengan sebelumnya) ...
+        function buildEnvironment() {
+            const backdropGeo = new THREE.CylinderGeometry(30, 30, 20, 64, 1, true, 0, Math.PI);
+            const backdropMat = new THREE.MeshStandardMaterial({ color: 0x222222, side: THREE.BackSide, roughness: 0.9 });
+            const backdrop = new THREE.Mesh(backdropGeo, backdropMat);
+            backdrop.position.set(0, 10, 0);
+            backdrop.receiveShadow = true;
+            scene.add(backdrop);
+
+            const floorGeo = new THREE.PlaneGeometry(60, 60);
+            const floorMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
+            const floor = new THREE.Mesh(floorGeo, floorMat);
+            floor.rotation.x = -Math.PI / 2;
+            floor.receiveShadow = true;
+            scene.add(floor);
+        }
+
+        function buildSubject() {
+            let subjectGroup = new THREE.Group();
+            const skinMat = new THREE.MeshStandardMaterial({ color: 0xe5c9b3, roughness: 0.5 });
+            const shirtMat = new THREE.MeshStandardMaterial({ color: 0x1e3a8a, roughness: 0.9 });
+
+            // Kepala
+            const head = new THREE.Mesh(new THREE.SphereGeometry(1.3, 64, 64), skinMat);
+            head.position.y = 5.0; head.scale.set(1, 1.25, 1.05); head.castShadow = true; head.receiveShadow = true;
+            subjectGroup.add(head);
+            
+            // Detail Wajah
+            const brow = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.3, 0.5), skinMat);
+            brow.position.set(0, 5.3, 1.15); brow.castShadow = true; brow.receiveShadow = true;
+            const jaw = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.7, 1.2, 32), skinMat);
+            jaw.position.set(0, 4.2, 0.3); jaw.castShadow = true; jaw.receiveShadow = true;
+            const nose = new THREE.Mesh(new THREE.ConeGeometry(0.25, 1.0, 32), skinMat);
+            nose.position.set(0, 4.6, 1.4); nose.rotation.x = Math.PI / 2.5; nose.castShadow = true; nose.receiveShadow = true;
+            subjectGroup.add(brow, jaw, nose);
+
+            // Torso
+            const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, 1.5, 32), skinMat);
+            neck.position.y = 3.5; neck.castShadow = true; neck.receiveShadow = true;
+            const body = new THREE.Mesh(new THREE.BoxGeometry(4.5, 3.5, 2.2), shirtMat);
+            body.position.y = 1.75; body.castShadow = true; body.receiveShadow = true;
+            const shoulder = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 4.5, 32), shirtMat);
+            shoulder.rotation.z = Math.PI / 2; shoulder.position.y = 3.0; shoulder.castShadow = true; shoulder.receiveShadow = true;
+            subjectGroup.add(neck, body, shoulder);
+
+            scene.add(subjectGroup);
+        }
+
+        function createLightFixture(colorHex) {
+            const fixtureGroup = new THREE.Group();
+            const casing = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 1), new THREE.MeshStandardMaterial({ color: 0x111111 }));
+            const panelMat = new THREE.MeshBasicMaterial({ color: colorHex });
+            const panel = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.4), panelMat);
+            panel.position.z = 0.51; 
+            const connector = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.5), new THREE.MeshStandardMaterial({ color: 0x333333 }));
+            connector.rotation.x = Math.PI / 2; connector.position.z = -0.7;
+            fixtureGroup.add(casing, panel, connector);
+            return { fixture: fixtureGroup, panelMat: panelMat };
+        }
+
+        function setupLights() {
+            ambientLight = new THREE.AmbientLight(0xffffff, 0.1);
+            scene.add(ambientLight);
+
+            const targetObj = new THREE.Object3D();
+            targetObj.position.set(0, 4.5, 0); 
+            scene.add(targetObj);
+            
+            const standMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+
+            function initLightSet(lightObj, color, helperColor) {
+                lightObj.light = new THREE.SpotLight(color, 1);
+                lightObj.light.castShadow = true;
+                lightObj.light.angle = Math.PI / 5;
+                lightObj.light.penumbra = 0.4;
+                lightObj.light.decay = 2;
+                lightObj.light.distance = 50;
+                lightObj.light.shadow.mapSize.width = 1024;
+                lightObj.light.shadow.mapSize.height = 1024;
+                lightObj.light.target = targetObj;
+                scene.add(lightObj.light);
+                
+                lightObj.helper = new THREE.SpotLightHelper(lightObj.light, helperColor);
+                scene.add(lightObj.helper);
+                
+                const fixData = createLightFixture(color);
+                lightObj.fixture = fixData.fixture;
+                lightObj.panelMat = fixData.panelMat;
+                scene.add(lightObj.fixture);
+                
+                lightObj.stand = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1), standMat);
+                scene.add(lightObj.stand);
+            }
+
+            initLightSet(lights.key, 0xffffff, 0x3b82f6);
+            initLightSet(lights.fill, 0xe0f0ff, 0x10b981); lights.fill.light.penumbra = 0.8;
+            initLightSet(lights.back, 0xffe0e0, 0x8b5cf6); lights.back.light.angle = Math.PI / 8;
+
+            updateLightPositions();
+        }
+
+        function calculatePosition(angleDeg, height, distance) {
+            const angleRad = (angleDeg - 90) * (Math.PI / 180); 
+            return { x: distance * Math.cos(angleRad), y: height, z: distance * Math.sin(angleRad) * -1 };
+        }
+
+        // Membaca status UI saat ini
+        function getCurrentState() {
+            return {
+                key: {
+                    enable: document.getElementById('key-enable').checked,
+                    int: parseFloat(document.getElementById('key-int').value),
+                    ang: parseFloat(document.getElementById('key-ang').value),
+                    hgt: parseFloat(document.getElementById('key-hgt').value),
+                    color: document.getElementById('key-color').value
+                },
+                fill: {
+                    enable: document.getElementById('fill-enable').checked,
+                    int: parseFloat(document.getElementById('fill-int').value),
+                    ang: parseFloat(document.getElementById('fill-ang').value),
+                    hgt: parseFloat(document.getElementById('fill-hgt').value),
+                    color: document.getElementById('fill-color').value
+                },
+                back: {
+                    enable: document.getElementById('back-enable').checked,
+                    int: parseFloat(document.getElementById('back-int').value),
+                    ang: parseFloat(document.getElementById('back-ang').value),
+                    hgt: parseFloat(document.getElementById('back-hgt').value),
+                    color: document.getElementById('back-color').value
+                }
+            };
+        }
+
+        // Terapkan status ke 3D Scene (bisa menggunakan status UI saat ini, atau state Misi)
+        function updateLightPositions(overrideState = null) {
+            const state = overrideState || getCurrentState();
+            const targetPos = new THREE.Vector3(0, 4.5, 0);
+
+            function applyToLight(lightObj, data) {
+                // Posisi
+                const pos = calculatePosition(data.ang, data.hgt, lightObj.dist);
+                lightObj.light.position.set(pos.x, pos.y, pos.z);
+                lightObj.fixture.position.set(pos.x, pos.y, pos.z);
+                lightObj.fixture.lookAt(targetPos);
+                lightObj.stand.position.set(pos.x, pos.y / 2, pos.z);
+                lightObj.stand.scale.set(1, pos.y, 1);
+
+                // Properti
+                lightObj.light.visible = data.enable;
+                lightObj.fixture.visible = data.enable;
+                lightObj.stand.visible = data.enable;
+                if(lightObj.helper) lightObj.helper.visible = data.enable && showHelpers;
+                
+                lightObj.light.intensity = data.int;
+                lightObj.light.color.set(data.color);
+                lightObj.panelMat.color.set(data.color);
+            }
+
+            applyToLight(lights.key, state.key);
+            applyToLight(lights.fill, state.fill);
+            applyToLight(lights.back, state.back);
+
+            if(showHelpers){
+                lights.key.helper.update();
+                lights.fill.helper.update();
+                lights.back.helper.update();
+            }
+        }
+
+        function setupUIHandlers() {
+            document.getElementById('show-helpers').addEventListener('change', (e) => {
+                showHelpers = e.target.checked;
+                updateLightPositions();
+            });
+
+            document.getElementById('ambient-intensity').addEventListener('input', (e) => {
+                ambientLight.intensity = parseFloat(e.target.value);
+                document.getElementById('val-ambient').innerText = e.target.value;
+            });
+
+            function bindLightControls(prefix) {
+                const controls = ['enable', 'int', 'ang', 'hgt', 'color'];
+                controls.forEach(ctrl => {
+                    document.getElementById(`${prefix}-${ctrl}`).addEventListener('input', (e) => {
+                        if(ctrl === 'int') document.getElementById(`val-${prefix}-int`).innerText = parseFloat(e.target.value).toFixed(1);
+                        if(ctrl === 'ang') document.getElementById(`val-${prefix}-ang`).innerText = `${e.target.value}°`;
+                        if(ctrl === 'hgt') document.getElementById(`val-${prefix}-hgt`).innerText = parseFloat(e.target.value).toFixed(1);
+                        updateLightPositions();
+                    });
+                });
+            }
+
+            bindLightControls('key');
+            bindLightControls('fill');
+            bindLightControls('back');
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // --- Sistem Toggle Panel Kiri & Kanan ---
+        setupMateriToggle();
+        setupControlsToggle();
+        
+        function setupMateriToggle() {
+            const materiPanel = document.getElementById('materi-panel');
+            const toggleBtn = document.getElementById('toggle-materi-btn');
+            let isMateriOpen = false;
+            toggleBtn.addEventListener('click', () => {
+                isMateriOpen = !isMateriOpen;
+                materiPanel.classList.toggle('-translate-x-full', !isMateriOpen);
+            });
+        }
+
+        function setupControlsToggle() {
+            const uiContainer = document.getElementById('ui-container');
+            const toggleBtn = document.getElementById('toggle-controls-btn');
+            const toggleIcon = document.getElementById('toggle-controls-icon');
+            let isControlsOpen = true; 
+            toggleBtn.addEventListener('click', () => {
+                isControlsOpen = !isControlsOpen;
+                uiContainer.classList.toggle('translate-x-full', !isControlsOpen);
+                toggleIcon.innerHTML = isControlsOpen 
+                    ? `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />`
+                    : `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />`;
+            });
+        }
+
+        // --- SISTEM MISI (GAMIFIKASI) ---
+        const missions = [
+            {
+                title: "Misi 1: Single Key Light",
+                desc: "Gunakan <b>hanya Key Light</b> (Matikan Fill & Back). Atur posisi lampu di sudut 45°, dengan ketinggian sejajar dada/wajah (5.0), dan intensitas agak terang (1.5).",
+                state: {
+                    key: { enable: true, int: 1.5, ang: 45, hgt: 5.0, color: "#ffffff" },
+                    fill: { enable: false, int: 0.4, ang: -45, hgt: 3.0, color: "#e0f0ff" },
+                    back: { enable: false, int: 0.8, ang: -160, hgt: 7.0, color: "#ffe0e0" }
+                }
+            },
+            {
+                title: "Misi 2: Basic 2-Point Lighting",
+                desc: "Wajah karakter memiliki bayangan terlalu gelap. <b>Nyalakan Fill Light</b> di sudut berlawanan (-45°) dengan intensitas rendah (0.5) untuk melembutkan bayangan.",
+                state: {
+                    key: { enable: true, int: 1.5, ang: 45, hgt: 5.0, color: "#ffffff" },
+                    fill: { enable: true, int: 0.5, ang: -45, hgt: 3.0, color: "#e0f0ff" },
+                    back: { enable: false, int: 0.8, ang: -160, hgt: 7.0, color: "#ffe0e0" }
+                }
+            },
+            {
+                title: "Misi 3: Cinematic Cyberpunk",
+                desc: "Gunakan ketiga lampu! Atur <b>Key</b> ke warna Pink (#ff007f) dari kiri (-60°). <b>Fill</b> warna biru (#00aaff) dari kanan (60°). <b>Back</b> warna ungu (#aa00ff) tepat dari belakang (180°) dengan intensitas kuat (2.0).",
+                state: {
+                    key: { enable: true, int: 1.5, ang: -60, hgt: 4.0, color: "#ff007f" },
+                    fill: { enable: true, int: 1.0, ang: 60, hgt: 4.0, color: "#00aaff" },
+                    back: { enable: true, int: 2.0, ang: 180, hgt: 6.0, color: "#aa00ff" }
+                }
+            }
+        ];
+
+        let currentMissionIndex = 0;
+
+        const btnToggleMission = document.getElementById('btn-toggle-mission');
+        const missionToolbar = document.getElementById('mission-toolbar');
+        const missionModal = document.getElementById('mission-modal');
+        const msnIndicator = document.getElementById('msn-indicator');
+        const msnModalTitle = document.getElementById('msn-modal-title');
+        const msnModalDesc = document.getElementById('msn-modal-desc');
+        const msnFeedback = document.getElementById('msn-feedback');
+        
+        const btnViewTarget = document.getElementById('btn-view-target');
+        const btnCheckMsn = document.getElementById('btn-check-msn');
+        const btnMsnInfo = document.getElementById('btn-msn-info');
+        const btnCloseModal = document.getElementById('btn-close-modal');
+        const btnQuitMsn = document.getElementById('btn-quit-msn');
+        
+        // Element Form
+        const btnOpenForm = document.getElementById('btn-open-form');
+        const formModal = document.getElementById('form-modal');
+        const btnCloseForm = document.getElementById('btn-close-form');
+
+        // Fungsi Reset Slider ke kondisi default/nol
+        function resetSlidersToDefault() {
+            function apply(prefix, data) {
+                document.getElementById(`${prefix}-enable`).checked = data.enable;
+                document.getElementById(`${prefix}-int`).value = data.int;
+                document.getElementById(`val-${prefix}-int`).innerText = data.int.toFixed(1);
+                document.getElementById(`${prefix}-ang`).value = data.ang;
+                document.getElementById(`val-${prefix}-ang`).innerText = `${data.ang}°`;
+                document.getElementById(`${prefix}-hgt`).value = data.hgt;
+                document.getElementById(`val-${prefix}-hgt`).innerText = data.hgt.toFixed(1);
+                document.getElementById(`${prefix}-color`).value = data.color;
+            }
+            
+            apply('key', { enable: true, int: 1.0, ang: 0, hgt: 5.0, color: "#ffffff" });
+            apply('fill', { enable: false, int: 0.4, ang: 0, hgt: 3.0, color: "#ffffff" });
+            apply('back', { enable: false, int: 0.8, ang: 180, hgt: 7.0, color: "#ffffff" });
+            updateLightPositions();
+        }
+
+        function loadMission() {
+            if (currentMissionIndex >= missions.length) {
+                msnModalTitle.innerText = "🎉 SELAMAT!";
+                msnModalDesc.innerHTML = "Anda telah menyelesaikan semua misi pelatihan dasar tata cahaya!";
+                missionToolbar.classList.add('hidden');
+                missionModal.classList.remove('hidden');
+                missionModal.classList.add('flex');
+                msnFeedback.classList.add('hidden');
+                
+                // Tampilkan Tombol Form
+                btnOpenForm.classList.remove('hidden');
+                btnCloseModal.innerText = "Tutup";
+                btnCloseModal.classList.replace('bg-purple-600', 'bg-gray-600');
+                btnCloseModal.classList.replace('hover:bg-purple-500', 'hover:bg-gray-500');
+                return;
+            }
+            
+            const m = missions[currentMissionIndex];
+            msnIndicator.innerText = `Misi ${currentMissionIndex + 1}`;
+            msnModalTitle.innerText = m.title;
+            msnModalDesc.innerHTML = m.desc;
+            msnFeedback.classList.add('hidden');
+            
+            // Sembunyikan Tombol Form jika sedang misi
+            btnOpenForm.classList.add('hidden');
+            
+            // Tampilkan Modal Info
+            missionModal.classList.remove('hidden');
+            missionModal.classList.add('flex');
+            btnCloseModal.innerText = "Mulai Meracik";
+            btnCloseModal.classList.remove('hidden');
+            btnCloseModal.classList.replace('bg-gray-600', 'bg-purple-600');
+            btnCloseModal.classList.replace('hover:bg-gray-500', 'hover:bg-purple-500');
+            
+            resetSlidersToDefault(); // Reset slider agar siswa meracik dari awal
+        }
+
+        // Memulai Mode Misi
+        btnToggleMission.addEventListener('click', () => {
+            btnToggleMission.classList.add('hidden');
+            missionToolbar.classList.remove('hidden');
+            missionToolbar.classList.add('flex');
+            currentMissionIndex = 0;
+            loadMission();
+        });
+
+        // Tombol Keluar / Berhenti Misi
+        btnQuitMsn.addEventListener('click', () => {
+            missionToolbar.classList.add('hidden');
+            missionToolbar.classList.remove('flex');
+            missionModal.classList.add('hidden');
+            missionModal.classList.remove('flex');
+            btnToggleMission.classList.remove('hidden');
+        });
+
+        // Buka Info Misi kembali tanpa mereset simulasi
+        btnMsnInfo.addEventListener('click', () => {
+            msnFeedback.classList.add('hidden');
+            btnCloseModal.innerText = "Tutup Info";
+            btnCloseModal.classList.remove('hidden');
+            missionModal.classList.remove('hidden');
+            missionModal.classList.add('flex');
+        });
+
+        // Tutup Modal Info
+        btnCloseModal.addEventListener('click', () => {
+            missionModal.classList.add('hidden');
+            missionModal.classList.remove('flex');
+            if (currentMissionIndex >= missions.length) {
+                btnToggleMission.classList.remove('hidden'); // Munculkan tombol utama jika sudah tamat
+            }
+        });
+
+        // Tampilkan & Tutup Form Modal
+        btnOpenForm.addEventListener('click', () => {
+            formModal.classList.remove('hidden');
+            formModal.classList.add('flex');
+        });
+        
+        btnCloseForm.addEventListener('click', () => {
+            formModal.classList.add('hidden');
+            formModal.classList.remove('flex');
+        });
+
+        // Fitur "Tahan Lihat Target" - Mengganti sementara pencahayaan tanpa merubah nilai Slider
+        function showTarget() {
+            if(currentMissionIndex >= missions.length) return;
+            updateLightPositions(missions[currentMissionIndex].state);
+            btnViewTarget.classList.replace('bg-blue-600', 'bg-blue-800');
+        }
+        function hideTarget() {
+            updateLightPositions(); // Kembali membaca nilai slider DOM
+            btnViewTarget.classList.replace('bg-blue-800', 'bg-blue-600');
+        }
+
+        btnViewTarget.addEventListener('mousedown', showTarget);
+        btnViewTarget.addEventListener('mouseup', hideTarget);
+        btnViewTarget.addEventListener('mouseleave', hideTarget);
+        // Dukungan Mobile/Touchscreen
+        btnViewTarget.addEventListener('touchstart', (e) => { e.preventDefault(); showTarget(); });
+        btnViewTarget.addEventListener('touchend', hideTarget);
+
+        // Fitur "Cek Hasil"
+        btnCheckMsn.addEventListener('click', () => {
+            const current = getCurrentState();
+            const target = missions[currentMissionIndex].state;
+            let score = 0;
+            let maxScore = 0;
+
+            function checkMatch(c, t) {
+                maxScore += 10; // Cek Enable
+                if (c.enable === t.enable) score += 10;
+
+                if (t.enable && c.enable) {
+                    maxScore += 40; // Cek Properti Lainnya
+                    if (Math.abs(c.ang - t.ang) <= 15) score += 10; // Toleransi Sudut 15 derajat
+                    if (Math.abs(c.hgt - t.hgt) <= 1.5) score += 10; // Toleransi Tinggi 1.5
+                    if (Math.abs(c.int - t.int) <= 0.4) score += 10; // Toleransi Intensitas 0.4
+                    if (c.color.toLowerCase() === t.color.toLowerCase()) score += 10;
+                }
+            }
+
+            checkMatch(current.key, target.key);
+            checkMatch(current.fill, target.fill);
+            checkMatch(current.back, target.back);
+
+            const accuracy = Math.round((score / maxScore) * 100);
+
+            // Munculkan Modal untuk menampilkan Feedback
+            msnFeedback.classList.remove('hidden', 'bg-red-500/20', 'text-red-400', 'bg-green-500/20', 'text-green-400');
+            missionModal.classList.remove('hidden');
+            missionModal.classList.add('flex');
+            btnCloseModal.innerText = "Tutup & Perbaiki";
+            
+            if (accuracy >= 85) { // Syarat Lulus: Akurasi minimal 85%
+                msnFeedback.classList.add('bg-green-500/20', 'text-green-400');
+                msnFeedback.innerText = `Luar Biasa! Akurasi: ${accuracy}%. Bersiap ke misi berikutnya...`;
+                btnCloseModal.classList.add('hidden'); // Sembunyikan tombol tutup saat transisi
+                setTimeout(() => {
+                    currentMissionIndex++;
+                    loadMission();
+                }, 2500);
+            } else {
+                msnFeedback.classList.add('bg-red-500/20', 'text-red-400');
+                msnFeedback.innerText = `Akurasi masih ${accuracy}%. Periksa kembali parameter (Sudut, Tinggi, Intensitas, Warna) atau pastikan lampu yang tepat telah dinyalakan/dimatikan.`;
+            }
+        });
+
+    </script>
+</body>
+</html>
